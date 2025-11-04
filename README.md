@@ -1,25 +1,3 @@
-<p align="center">
-  <a href="https://kangbeef-store.com">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://placehold.co/300x100/1a1a1a/ffffff?text=Kangbeef+Store">
-      <source media="(prefers-color-scheme: light)" srcset="https://placehold.co/300x100/ffffff/1a1a1a?text=Kangbeef+Store">
-      <img src="https://placehold.co/300x100/ffffff/1a1a1a?text=Kangbeef+Store" alt="Kangbeef Store logo">
-    </picture>
-  </a>
-</p>
-
-<p align="center">
-    <a href="https://github.com/kangbeef-store/kangbeef-store"><img src="https://img.shields.io/github/stars/kangbeef-store/kangbeef-store.svg" alt="Stars"></a>
-    <a href="https://github.com/kangbeef-store/kangbeef-store/releases"><img src="https://img.shields.io/github/release/kangbeef-store/kangbeef-store.svg" alt="Latest Release"></a>
-    <a href="https://github.com/kangbeef-store/kangbeef-store/blob/main/LICENSE"><img src="https://img.shields.io/github/license/kangbeef-store/kangbeef-store.svg" alt="License"></a>
-    <a href="https://www.php.net/"><img src="https://img.shields.io/badge/PHP-%5E8.2-blue.svg" alt="PHP Version"></a>
-    <a href="https://laravel.com/"><img src="https://img.shields.io/badge/Laravel-%5E11.0-red.svg" alt="Laravel Version"></a>
-</p>
-
-<p align="center">
-    ➡️ <a href="https://kangbeef-store.com">Website</a> | <a href="#installation">Documentation</a> | <a href="#getting-started">Getting Started</a> | <a href="#support">Support</a> ⬅️
-</p>
-
 # Kangbeef Store
 
 Kangbeef Store is a premium e-commerce platform specializing in high-quality beef and meat products. Our platform offers customers access to premium cuts, organic options, and specialty meat products with guaranteed freshness and quality.
