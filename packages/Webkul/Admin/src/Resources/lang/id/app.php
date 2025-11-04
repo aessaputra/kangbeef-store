@@ -6,7 +6,7 @@ return [
             'email'                  => 'Alamat Email',
             'forget-password-link'   => 'Lupa Kata Sandi?',
             'password'               => 'Kata Sandi',
-            'powered-by-description' => 'Dibuat oleh :bagisto, proyek open-source dari :webkul.',
+            'powered-by-description' => 'Dibuat Oleh <a class="text-blue-600 hover:underline dark:text-darkBlue" href="https://aessaputra.net" target="_blank">Aes Saputra</a>',
             'submit-btn'             => 'Masuk',
             'title'                  => 'Masuk',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => 'Email Terdaftar',
                 'email-not-exist'        => 'Email Tidak Ditemukan',
                 'page-title'             => 'Lupa Kata Sandi',
-                'powered-by-description' => 'Dibuat oleh :bagisto, proyek open-source dari :webkul.',
+                'powered-by-description' => 'Dibuat Oleh <a class="text-blue-600 hover:underline dark:text-darkBlue" href="https://aessaputra.net" target="_blank">Aes Saputra</a>',
                 'reset-link-sent'        => 'Tautan Reset Kata Sandi telah dikirim',
                 'sign-in-link'           => 'Kembali ke Halaman Masuk?',
                 'submit-btn'             => 'Atur Ulang',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'Konfirmasi Kata Sandi',
             'email'                  => 'Email Terdaftar',
             'password'               => 'Kata Sandi',
-            'powered-by-description' => 'Dibuat oleh :bagisto, proyek open-source dari :webkul.',
+            'powered-by-description' => 'Dibuat Oleh <a class="text-blue-600 hover:underline dark:text-darkBlue" href="https://aessaputra.net" target="_blank">Aes Saputra</a>',
             'submit-btn'             => 'Atur Ulang Kata Sandi',
             'title'                  => 'Atur Ulang Kata Sandi',
         ],
@@ -4709,7 +4709,7 @@ return [
             ],
 
             'powered-by' => [
-                'description' => 'Dibuat oleh :bagisto, proyek open-source dari :webkul.',
+                'description' => 'Dibuat Oleh <a class="text-blue-600 hover:underline dark:text-darkBlue" href="https://aessaputra.net" target="_blank">Aes Saputra</a>',
             ],
         ],
 
