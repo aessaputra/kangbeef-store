@@ -1,116 +1,190 @@
 services:
-    laravel.test:
-        build:
-            context: ./vendor/laravel/sail/runtimes/8.3
-            dockerfile: Dockerfile
-            args:
-                WWWGROUP: '${WWWGROUP}'
-        image: sail-8.3/app
-        extra_hosts:
-            - 'host.docker.internal:host-gateway'
-        ports:
-            - '${APP_PORT:-80}:80'
-            - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
-        environment:
-            WWWUSER: '${WWWUSER}'
-            LARAVEL_SAIL: 1
-            XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
-            XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
-            IGNITION_LOCAL_SITES_PATH: '${PWD}'
-        volumes:
-            - '.:/var/www/html'
-        networks:
-            - sail
-        depends_on:
-            - mysql
-            - redis
-            - elasticsearch
-            - kibana
-            - mailpit
-    mysql:
-        image: 'mysql/mysql-server:8.0'
-        ports:
-            - '${FORWARD_DB_PORT:-3306}:3306'
-        environment:
-            MYSQL_ROOT_PASSWORD: '${DB_PASSWORD}'
-            MYSQL_ROOT_HOST: '%'
-            MYSQL_DATABASE: '${DB_DATABASE}'
-            MYSQL_USER: '${DB_USERNAME}'
-            MYSQL_PASSWORD: '${DB_PASSWORD}'
-            MYSQL_ALLOW_EMPTY_PASSWORD: 1
-        volumes:
-            - 'sail-mysql:/var/lib/mysql'
-            - './vendor/laravel/sail/database/mysql/create-testing-database.sh:/docker-entrypoint-initdb.d/10-create-testing-database.sh'
-        networks:
-            - sail
-        healthcheck:
-            test:
-                - CMD
-                - mysqladmin
-                - ping
-                - '-p${DB_PASSWORD}'
-            retries: 3
-            timeout: 5s
-    redis:
-        image: 'redis:alpine'
-        ports:
-            - '${FORWARD_REDIS_PORT:-6379}:6379'
-        volumes:
-            - 'sail-redis:/data'
-        networks:
-            - sail
-        healthcheck:
-            test:
-                - CMD
-                - redis-cli
-                - ping
-            retries: 3
-            timeout: 5s
-    elasticsearch:
-        image: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
-        ports:
-            - '9200:9200'
-            - '9300:9300'
-        environment:
-            - xpack.security.enabled=false
-            - discovery.type=single-node
-            - bootstrap.memory_lock=true
-            - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
-        ulimits:
-            memlock:
-                soft: -1
-                hard: -1
-            nofile:
-                soft: 65536
-                hard: 65536
-        volumes:
-            - 'sail-elasticsearch:/var/lib/elasticsearch/data'
-        networks:
-            - sail
-    kibana:
-        image: docker.elastic.co/kibana/kibana:7.17.0
-        ports:
-            - 5601:5601
-        environment:
-            ELASTICSEARCH_HOSTS: 'http://elasticsearch:9200'
-        networks:
-            - sail
-        depends_on:
-            - elasticsearch
-    mailpit:
-        image: 'axllent/mailpit:latest'
-        ports:
-            - '${FORWARD_MAILPIT_PORT:-1025}:1025'
-            - '${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}:8025'
-        networks:
-            - sail
+  app:
+    image: ${APP_IMAGE:-store-app:prod}
+    container_name: store-app
+    env_file: .env
+    environment:
+      TZ: Asia/Jakarta
+    labels:
+      com.kangbeef.role: "laravel"
+      com.kangbeef.environment: "production"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8888:8080"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    volumes:
+      - app_storage:/var/www/html/storage
+      - app_cache:/var/www/html/bootstrap/cache
+    networks:
+      - store-network
+
+  db:
+    image: mysql:8.0
+    container_name: store-db
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --innodb-buffer-pool-size=256M
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --sql-require-primary-key=ON
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-store}
+      MYSQL_USER: ${DB_USERNAME:-store}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      TZ: Asia/Jakarta
+    volumes:
+      - db_data:/var/lib/mysql
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - store-network
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+
+  redis:
+    image: redis:7-alpine
+    container_name: store-redis
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - store-network
+    sysctls:
+      - net.core.somaxconn=65535
+
+  # Queue Worker Service
+  queue:
+    image: ${APP_IMAGE:-store-app:prod}
+    container_name: store-queue
+    env_file: .env
+    environment:
+      TZ: Asia/Jakarta
+    labels:
+      com.kangbeef.role: "laravel-queue"
+      com.kangbeef.environment: "production"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    volumes:
+      - app_storage:/var/www/html/storage
+      - app_cache:/var/www/html/bootstrap/cache
+    networks:
+      - store-network
+    command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
+    healthcheck:
+      test: ["CMD", "sh", "-c", "pgrep -f 'php artisan queue:work' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Laravel Scheduler Service
+  scheduler:
+    image: ${APP_IMAGE:-store-app:prod}
+    container_name: store-scheduler
+    env_file: .env
+    environment:
+      TZ: Asia/Jakarta
+    labels:
+      com.kangbeef.role: "laravel-scheduler"
+      com.kangbeef.environment: "production"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    volumes:
+      - app_storage:/var/www/html/storage
+      - app_cache:/var/www/html/bootstrap/cache
+    networks:
+      - store-network
+    command: php artisan schedule:work
+    healthcheck:
+      test: ["CMD", "sh", "-c", "pgrep -f 'php artisan schedule:work' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # === OPTIONAL: Elasticsearch (enable if needed) ===
+  # elasticsearch:
+  #   image: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
+  #   container_name: store-elasticsearch
+  #   environment:
+  #     discovery.type: single-node
+  #     xpack.security.enabled: "false"
+  #     ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+  #   ulimits:
+  #     memlock: { soft: -1, hard: -1 }
+  #     nofile:  { soft: 65536, hard: 65536 }
+  #   volumes:
+  #     - es_data:/usr/share/elasticsearch/data
+  #   restart: unless-stopped
+  #   networks:
+  #     - store-network
+
 networks:
-    sail:
-        driver: bridge
+  store-network:
+    driver: bridge
+
 volumes:
-    sail-mysql:
-        driver: local
-    sail-redis:
-        driver: local
-    sail-elasticsearch:
-        driver: local
+  db_data:
+    driver: local
+  redis_data:
+    driver: local
+  app_storage:
+    driver: local
+  app_cache:
+    driver: local
+  # es_data:
+  #   driver: local
