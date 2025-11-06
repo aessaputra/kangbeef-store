@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # -------- Stage 1: Composer dependencies --------
-FROM php:8.3-cli AS vendor
+FROM --platform=$BUILDPLATFORM php:8.3-cli AS vendor
 # Install Composer and required PHP extensions
 RUN set -eux; \
     buildDeps="zlib1g-dev libzip-dev libicu-dev libjpeg-dev libpng-dev libwebp-dev libfreetype6-dev libgmp-dev $PHPIZE_DEPS libmagickwand-dev"; \
@@ -9,6 +9,7 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends $buildDeps curl; \
     docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
     docker-php-ext-install -j"$(nproc)" gd intl bcmath gmp exif pdo_mysql zip calendar; \
+    docker-php-ext-enable gd intl bcmath gmp exif pdo_mysql zip calendar; \
     pecl install imagick; docker-php-ext-enable imagick; \
     apt-get purge -y --auto-remove $buildDeps; \
     apt-get autoremove -y; \
@@ -26,7 +27,7 @@ COPY . .
 RUN composer dump-autoload --optimize --classmap-authoritative
 
 # -------- Stage 2: Frontend (Vite) --------
-FROM node:20-alpine AS frontend
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend
 WORKDIR /app
 ENV NODE_OPTIONS=--max-old-space-size=2048
 # Copy package files first to leverage Docker cache
