@@ -182,11 +182,13 @@ pipeline {
                                     docker compose up -d queue scheduler || true
 
                                     echo \"Waiting for app health...\"
-                                    for i in {1..30}; do
+                                    i=1
+                                    while [ $i -le 30 ]; do
                                       if docker compose exec -T app sh -lc \"curl -fsS http://localhost:8080/ >/dev/null\"; then
                                         echo \"App is responding.\"; break
                                       fi
                                       sleep 2
+                                      i=$((i+1))
                                     done
 
                                     echo \"Creating DB backup (if db exists)...\"
