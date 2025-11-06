@@ -129,6 +129,7 @@ pipeline {
         stage('Deploy') {
             when {
                 expression {
+                    // Jalan jika BRANCH_NAME kosong (pipeline freestyle) atau main
                     return env.BRANCH_NAME == null || env.BRANCH_NAME == '' || env.BRANCH_NAME == 'main'
                 }
             }
@@ -146,14 +147,17 @@ pipeline {
                         sh '''
                             set -euxo pipefail
 
-                            # Debug: Check shell on remote server
-                            echo "DEBUG: Checking remote shell..."
-                            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                                "$SSH_USER@$DEPLOY_HOST" "echo 'Shell is:' && echo \$0"
+                            echo "DEBUG: local env:"
+                            echo "REGISTRY=$REGISTRY"
+                            echo "IMAGE_NAME=$IMAGE_NAME"
+                            echo "BUILD_NUMBER=$BUILD_NUMBER"
+                            echo "DEPLOY_PATH=$DEPLOY_PATH"
+                            echo "BACKUP_PATH=$BACKUP_PATH"
 
-                            # Pastikan folder dan compose ada di server
+                            # Pastikan folder dan docker-compose.yml ada di server
                             ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                                 "$SSH_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+
                             scp -i "$SSH_KEY" -o StrictHostKeyChecking=no docker-compose.yml \
                                 "$SSH_USER@$DEPLOY_HOST:$DEPLOY_PATH/docker-compose.yml"
 
@@ -162,58 +166,50 @@ pipeline {
                                 "$SSH_USER@$DEPLOY_HOST" \
                                 "echo '$PASS' | docker login -u '$USER' --password-stdin '$REGISTRY'"
 
-                            # Debug: Check environment variables before creating script
-                            echo "DEBUG: Environment variables:"
-                            echo "REGISTRY=$REGISTRY"
-                            echo "IMAGE_NAME=$IMAGE_NAME"
-                            echo "BUILD_NUMBER=$BUILD_NUMBER"
-                            echo "DEPLOY_PATH=$DEPLOY_PATH"
-                            echo "BACKUP_PATH=$BACKUP_PATH"
-
-                            # Jalankan deploy di server dengan env yang dikirim eksplisit
+                            # Kirim script deploy dan jalankan dengan bash di server
                             ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                                "$SSH_USER@$DEPLOY_HOST" \
-                                "cat > /tmp/deploy-script.sh << 'EOF'
+                                "$SSH_USER@$DEPLOY_HOST" 'bash -s' << EOF
 #!/bin/bash
 set -Eeuo pipefail
 
-# Export environment variables
-export REGISTRY="${REGISTRY}"
-export IMAGE_NAME="${IMAGE_NAME}"
-export BUILD_NUMBER="${BUILD_NUMBER}"
-export DEPLOY_PATH="${DEPLOY_PATH}"
-export BACKUP_PATH="${BACKUP_PATH}"
+# Inject value dari Jenkins env (sudah terisi sebelum dikirim)
+REGISTRY="$REGISTRY"
+IMAGE_NAME="$IMAGE_NAME"
+BUILD_NUMBER="$BUILD_NUMBER"
+DEPLOY_PATH="$DEPLOY_PATH"
+BACKUP_PATH="$BACKUP_PATH"
 
-cd "\${DEPLOY_PATH}"
+cd "$DEPLOY_PATH"
 
-APP_IMAGE="\${REGISTRY}/\${IMAGE_NAME}:\${BUILD_NUMBER}"
+APP_IMAGE="$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER"
 
 echo "Pulling latest app image..."
 docker compose pull app || true
 
 echo "Deploying new app container..."
-APP_IMAGE="\${APP_IMAGE}" docker compose up -d --no-deps --pull always --force-recreate app
+APP_IMAGE="$APP_IMAGE" docker compose up -d --no-deps --pull always --force-recreate app
 
 echo "Ensuring queue & scheduler running..."
 docker compose up -d queue scheduler || true
 
 echo "Waiting for app health..."
 i=1
-while [ \${i} -le 30 ]; do
+while [ $i -le 30 ]; do
   if docker compose exec -T app sh -lc "curl -fsS http://localhost:8080/ >/dev/null"; then
-    echo "App is responding."; break
+    echo "App is responding."
+    break
   fi
   sleep 2
-  i=\$((i+1))
+  i=$((i+1))
 done
 
 echo "Creating DB backup (if db exists)..."
-mkdir -p "\${BACKUP_PATH}"
+mkdir -p "$BACKUP_PATH"
 if docker compose ps db >/dev/null 2>&1; then
-  DATE=\$(date +%F-%H%M%S)
-  docker compose exec -T db sh -lc \\
-    "mysqldump -u\"\${MYSQL_USER}\" -p\"\${MYSQL_PASSWORD}\" \"\${MYSQL_DATABASE}\"" \\
-    | gzip > "\${BACKUP_PATH}/store-\${DATE}.sql.gz" || true
+  DATE=$(date +%F-%H%M%S)
+  docker compose exec -T db sh -lc \
+    "mysqldump -u\"$MYSQL_USER\" -p\"$MYSQL_PASSWORD\" \"$MYSQL_DATABASE\"" \
+    | gzip > "$BACKUP_PATH/store-${DATE}.sql.gz" || true
 fi
 
 echo "Running migrations & optimizing caches..."
@@ -228,24 +224,8 @@ docker compose exec -T app sh -lc "curl -fsS http://localhost:8080/ >/dev/null"
 echo "Cleanup..."
 docker image prune -f || true
 
-docker logout "\${REGISTRY}"
-EOF"
-
-                            # Debug: Check script content before execution
-                            echo "DEBUG: Checking script content..."
-                            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                                "$SSH_USER@$DEPLOY_HOST" "head -n 20 /tmp/deploy-script.sh"
-
-                            # Debug: Try to validate shell syntax before execution
-                            echo "DEBUG: Validating shell syntax..."
-                            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                                "$SSH_USER@$DEPLOY_HOST" "bash -n /tmp/deploy-script.sh"
-
-                            # Execute with explicit bash instead of sh
-                            echo "DEBUG: Executing with explicit bash..."
-                            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                                "$SSH_USER@$DEPLOY_HOST" \
-                                "chmod +x /tmp/deploy-script.sh && bash /tmp/deploy-script.sh"
+docker logout "$REGISTRY"
+EOF
                         '''
                     }
                 }
