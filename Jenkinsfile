@@ -140,7 +140,7 @@ pipeline {
                                     ${DEPLOY_USER}@${DEPLOY_HOST} bash -lc 'set -Eeuo pipefail
                                 
                                 echo "Starting deployment..."
-                                cd '"${DEPLOY_PATH}"'
+                                cd '"\${DEPLOY_PATH}"'
                                 
                                 # Login to Docker registry for private images
                                 echo "\$PASS" | docker login -u "\$USER" --password-stdin ${REGISTRY}
@@ -177,10 +177,10 @@ pipeline {
                                 
                                 # Quick DB backup before migrating
                                 echo "Creating database backup..."
-                                mkdir -p '"${BACKUP_PATH}"'
+                                mkdir -p '"\${BACKUP_PATH}"'
                                 DATE=$(date +%F-%H%M%S)
                                 docker compose exec -T db sh -lc 'mysqldump -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' \
-                                  | gzip > '"${BACKUP_PATH}"'/store-${DATE}.sql.gz || true
+                                  | gzip > '"\${BACKUP_PATH}"'/store-\${DATE}.sql.gz || true
 
                                 # Run migrations and cache commands
                                 echo "Running migrations..."
@@ -280,7 +280,7 @@ pipeline {
                         def prevBuild = "${BUILD_NUMBER-1}"
                         sh """
                             ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${DEPLOY_USER}@${DEPLOY_HOST} bash -lc 'set -Eeuo pipefail
-                              cd '"${DEPLOY_PATH}"'
+                              cd '"\${DEPLOY_PATH}"'
 
                               # Tentukan target rollback: previous build jika ada, else staging
                               if [ -n "${currentBuild}" ] && [ "${currentBuild}" -gt 1 ]; then
