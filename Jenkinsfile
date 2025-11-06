@@ -159,7 +159,7 @@ pipeline {
                                 
                                 # Deploy new version
                                 echo "Deploying new version..."
-                                APP_IMAGE=\${imageTag} \
+                                APP_IMAGE=${imageTag} \
                                 docker compose up -d --no-deps --pull always --force-recreate app
                                 
                                 # Update worker & scheduler services as well
