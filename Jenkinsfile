@@ -218,19 +218,46 @@ echo "DEBUG: APP_IMAGE=$APP_IMAGE"
 echo "Pulling latest app image..."
 MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose pull app || true
 
+echo "Stopping existing containers..."
+MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose down || true
+
+echo "Starting database container first..."
+MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose up -d db
+
+echo "Waiting for database to be healthy..."
+sleep 10
+for i in {1..30}; do
+  if MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose exec -T db mysqladmin ping -h localhost --silent; then
+    echo "Database is healthy."
+    break
+  fi
+  echo "Waiting for database to be ready... ($i/30)"
+  sleep 2
+done
+
 echo "Deploying new app container..."
 MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" APP_IMAGE="$APP_IMAGE" docker compose up -d --no-deps --pull always --force-recreate app
 
 echo "Ensuring queue & scheduler running..."
 MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose up -d queue scheduler || true
 
+echo "Checking container status..."
+MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose ps
+
+echo "Checking database container logs (last 20 lines)..."
+MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose logs --tail=20 db || echo "Could not get db logs"
+
+echo "Checking app container logs (last 20 lines)..."
+MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose logs --tail=20 app || echo "Could not get app logs"
+
 echo "Waiting for app health..."
 i=1
 while [ $i -le 30 ]; do
-  if docker compose exec -T app sh -lc "curl -fsS http://localhost:8080/ >/dev/null"; then
+  if MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose exec -T app sh -lc "curl -fsS http://localhost:8080/ >/dev/null"; then
     echo "App is responding."
     break
   fi
+  echo "Health check attempt $i/30..."
   sleep 2
   i=$((i+1))
 done
