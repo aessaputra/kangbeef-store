@@ -76,7 +76,6 @@ pipeline {
                             php -v
                     """
                     // Check required PHP extensions
-                    def imageTag = "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
                     sh """
                         docker run --rm ${imageTag} php -m | tee /tmp/phpm.txt
                         grep -qiE '^intl\\$' /tmp/phpm.txt
