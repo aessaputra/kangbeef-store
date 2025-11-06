@@ -27,10 +27,14 @@ pipeline {
                 sh 'docker version'
                 sh 'docker compose version || docker-compose version || true'
 
-                sshagent (credentials: ['prod-ssh']) {
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: 'prod-ssh',
+                    keyFileVariable: 'SSH_KEY',
+                    usernameVariable: 'SSH_USER'
+                )]) {
                     sh '''
-                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                            "$DEPLOY_USER@$DEPLOY_HOST" \
+                        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                            "$SSH_USER@$DEPLOY_HOST" \
                             "echo DEPLOY_OK && (docker compose version || docker-compose version || true)"
                     '''
                 }
@@ -135,24 +139,28 @@ pipeline {
                     usernameVariable: 'USER',
                     passwordVariable: 'PASS'
                 )]) {
-                    sshagent (credentials: ['prod-ssh']) {
+                    withCredentials([sshUserPrivateKey(
+                        credentialsId: 'prod-ssh',
+                        keyFileVariable: 'SSH_KEY',
+                        usernameVariable: 'SSH_USER'
+                    )]) {
                         sh '''
                             set -euxo pipefail
 
                             # Pastikan folder dan compose ada di server
-                            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                                "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
-                            scp -o StrictHostKeyChecking=no docker-compose.yml \
-                                "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/docker-compose.yml"
+                            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                                "$SSH_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+                            scp -i "$SSH_KEY" -o StrictHostKeyChecking=no docker-compose.yml \
+                                "$SSH_USER@$DEPLOY_HOST:$DEPLOY_PATH/docker-compose.yml"
 
                             # Login Docker di server
-                            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                                "$DEPLOY_USER@$DEPLOY_HOST" \
+                            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                                "$SSH_USER@$DEPLOY_HOST" \
                                 "echo '$PASS' | docker login -u '$USER' --password-stdin '$REGISTRY'"
 
                             # Jalankan deploy di server dengan env yang dikirim eksplisit
-                            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                                "$DEPLOY_USER@$DEPLOY_HOST" "
+                            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                                "$SSH_USER@$DEPLOY_HOST" "
                                   REGISTRY='$REGISTRY' \
                                   IMAGE_NAME='$IMAGE_NAME' \
                                   BUILD_NUMBER='$BUILD_NUMBER' \
