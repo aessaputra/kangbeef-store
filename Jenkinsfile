@@ -3,7 +3,9 @@ pipeline {
     
     environment {
         REGISTRY   = "docker.io"
-        IMAGE_NAME = "aessaputra/store-app"
+        IMAGE_NAME = "aessaputra/kangbeef-store"
+        DEPLOY_USER  = "kangbeef"
+        DEPLOY_HOST  = "168.138.171.60"
         DOCKER_BUILDKIT = "1"
         COMPOSE_DOCKER_CLI_BUILD = "1"
         DEPLOY_PATH = "/home/kangbeef/web/kangbeef.com/docker_app"

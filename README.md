@@ -35,7 +35,7 @@ At Kangbeef Store, we pride ourselves on offering:
 
 Kangbeef Store is built on modern, reliable technologies:
 
-- **Backend**: Laravel 11 (PHP 8.2+)
+- **Backend**: Laravel 11 (PHP 8.3)
 - **Frontend**: Vue.js with responsive design
 - **Database**: MySQL with optimized queries for product catalogs
 - **Search**: Elasticsearch for advanced product search
@@ -44,7 +44,7 @@ Kangbeef Store is built on modern, reliable technologies:
 
 ## 📋 Requirements
 
-- PHP >= 8.2
+- PHP 8.3
 - MySQL >= 8.0
 - Composer
 - Node.js & NPM
@@ -55,7 +55,7 @@ Kangbeef Store is built on modern, reliable technologies:
 ### Quick Start with Docker
 
 ```bash
-git clone https://github.com/kangbeef-store/kangbeef-store.git
+git clone https://github.com/aessaputra/kangbeef-store.git
 cd kangbeef-store
 docker-compose up -d
 ```
@@ -64,7 +64,7 @@ docker-compose up -d
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/kangbeef-store/kangbeef-store.git
+git clone https://github.com/aessaputra/kangbeef-store.git
 cd kangbeef-store
 ```
 

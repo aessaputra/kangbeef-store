@@ -1,6 +1,6 @@
 services:
   app:
-    image: ${APP_IMAGE:-store-app:prod}
+    image: ${APP_IMAGE:-docker.io/aessaputra/kangbeef-store:latest}
     container_name: store-app
     env_file: .env
     environment:
