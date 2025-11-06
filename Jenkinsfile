@@ -159,62 +159,67 @@ pipeline {
 
                             # Jalankan deploy di server dengan env yang dikirim eksplisit
                             ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                                "$SSH_USER@$DEPLOY_HOST" '
-                                  REGISTRY="'$REGISTRY'" \
-                                  IMAGE_NAME="'$IMAGE_NAME'" \
-                                  BUILD_NUMBER="'$BUILD_NUMBER'" \
-                                  DEPLOY_PATH="'$DEPLOY_PATH'" \
-                                  BACKUP_PATH="'$BACKUP_PATH'" \
-                                  bash -lc "
-                                    set -Eeuo pipefail
+                                "$SSH_USER@$DEPLOY_HOST" \
+                                "cat > /tmp/deploy-script.sh << 'EOF'
+#!/bin/bash
+set -Eeuo pipefail
 
-                                    cd \"\$DEPLOY_PATH\"
+export REGISTRY=\"$REGISTRY\"
+export IMAGE_NAME=\"$IMAGE_NAME\"
+export BUILD_NUMBER=\"$BUILD_NUMBER\"
+export DEPLOY_PATH=\"$DEPLOY_PATH\"
+export BACKUP_PATH=\"$BACKUP_PATH\"
 
-                                    APP_IMAGE=\"\$REGISTRY/\$IMAGE_NAME:\$BUILD_NUMBER\"
+cd \"\$DEPLOY_PATH\"
 
-                                    echo \"Pulling latest app image...\"
-                                    docker compose pull app || true
+APP_IMAGE=\"\$REGISTRY/\$IMAGE_NAME:\$BUILD_NUMBER\"
 
-                                    echo \"Deploying new app container...\"
-                                    APP_IMAGE=\"\$APP_IMAGE\" docker compose up -d --no-deps --pull always --force-recreate app
+echo \"Pulling latest app image...\"
+docker compose pull app || true
 
-                                    echo \"Ensuring queue & scheduler running...\"
-                                    docker compose up -d queue scheduler || true
+echo \"Deploying new app container...\"
+APP_IMAGE=\"\$APP_IMAGE\" docker compose up -d --no-deps --pull always --force-recreate app
 
-                                    echo \"Waiting for app health...\"
-                                    i=1
-                                    while [ \$i -le 30 ]; do
-                                      if docker compose exec -T app sh -lc \"curl -fsS http://localhost:8080/ >/dev/null\"; then
-                                        echo \"App is responding.\"; break
-                                      fi
-                                      sleep 2
-                                      i=\$((i+1))
-                                    done
+echo \"Ensuring queue & scheduler running...\"
+docker compose up -d queue scheduler || true
 
-                                    echo \"Creating DB backup (if db exists)...\"
-                                    mkdir -p \"\$BACKUP_PATH\"
-                                    if docker compose ps db >/dev/null 2>&1; then
-                                      DATE=\$(date +%F-%H%M%S)
-                                      docker compose exec -T db sh -lc \\
-                                        \"mysqldump -u\\\"\$MYSQL_USER\\\" -p\\\"\$MYSQL_PASSWORD\\\" \\\"\$MYSQL_DATABASE\\\"\" \\
-                                        | gzip > \"\$BACKUP_PATH/store-\${DATE}.sql.gz\" || true
-                                    fi
+echo \"Waiting for app health...\"
+i=1
+while [ \$i -le 30 ]; do
+  if docker compose exec -T app sh -lc \"curl -fsS http://localhost:8080/ >/dev/null\"; then
+    echo \"App is responding.\"; break
+  fi
+  sleep 2
+  i=\$((i+1))
+done
 
-                                    echo \"Running migrations & optimizing caches...\"
-                                    docker compose exec -T app php artisan migrate --force
-                                    docker compose exec -T app php artisan config:cache
-                                    docker compose exec -T app php artisan route:cache
-                                    docker compose exec -T app php artisan view:cache
+echo \"Creating DB backup (if db exists)...\"
+mkdir -p \"\$BACKUP_PATH\"
+if docker compose ps db >/dev/null 2>&1; then
+  DATE=\$(date +%F-%H%M%S)
+  docker compose exec -T db sh -lc \\
+    \"mysqldump -u\\\"\$MYSQL_USER\\\" -p\\\"\$MYSQL_PASSWORD\\\" \\\"\$MYSQL_DATABASE\\\"\" \\
+    | gzip > \"\$BACKUP_PATH/store-\${DATE}.sql.gz\" || true
+fi
 
-                                    echo \"Final health check...\"
-                                    docker compose exec -T app sh -lc \"curl -fsS http://localhost:8080/ >/dev/null\"
+echo \"Running migrations & optimizing caches...\"
+docker compose exec -T app php artisan migrate --force
+docker compose exec -T app php artisan config:cache
+docker compose exec -T app php artisan route:cache
+docker compose exec -T app php artisan view:cache
 
-                                    echo \"Cleanup...\"
-                                    docker image prune -f || true
+echo \"Final health check...\"
+docker compose exec -T app sh -lc \"curl -fsS http://localhost:8080/ >/dev/null\"
 
-                                    docker logout \"\$REGISTRY\"
-                                  "
-                                '
+echo \"Cleanup...\"
+docker image prune -f || true
+
+docker logout \"\$REGISTRY\"
+EOF"
+
+                            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                                "$SSH_USER@$DEPLOY_HOST" \
+                                "chmod +x /tmp/deploy-script.sh && /tmp/deploy-script.sh"
                         '''
                     }
                 }
