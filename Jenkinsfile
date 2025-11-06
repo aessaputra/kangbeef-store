@@ -77,14 +77,14 @@ pipeline {
                     // Check required PHP extensions
                     sh """
                         docker run --rm ${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} php -m | tee /tmp/phpm.txt
-                        grep -qiE '^intl$' /tmp/phpm.txt
-                        grep -qiE '^gd$' /tmp/phpm.txt
-                        grep -qiE '^imagick$' /tmp/phpm.txt
-                        grep -qiE '^pdo_mysql$' /tmp/phpm.txt
-                        grep -qiE '^bcmath$' /tmp/phpm.txt
-                        grep -qiE '^gmp$' /tmp/phpm.txt
-                        grep -qiE '^exif$' /tmp/phpm.txt
-                        grep -qiE '^zip$' /tmp/phpm.txt
+                        grep -qiE '^intl\\$' /tmp/phpm.txt
+                        grep -qiE '^gd\\$' /tmp/phpm.txt
+                        grep -qiE '^imagick\\$' /tmp/phpm.txt
+                        grep -qiE '^pdo_mysql\\$' /tmp/phpm.txt
+                        grep -qiE '^bcmath\\$' /tmp/phpm.txt
+                        grep -qiE '^gmp\\$' /tmp/phpm.txt
+                        grep -qiE '^exif\\$' /tmp/phpm.txt
+                        grep -qiE '^zip\\$' /tmp/phpm.txt
                     """
                 }
             }
@@ -140,7 +140,7 @@ pipeline {
                                 cd '"${DEPLOY_PATH}"'
                                 
                                 # Login to Docker registry for private images
-                                echo "$PASS" | docker login -u "$USER" --password-stdin ${REGISTRY}
+                                echo "\$PASS" | docker login -u "\$USER" --password-stdin ${REGISTRY}
                                 
                                 # Pull latest images
                                 echo "Pulling latest images..."
