@@ -14,7 +14,7 @@ Homestead.yaml
 /ignorables/*
 /node_modules
 npm-debug.log
-package-lock.json
+#package-lock.json
 /playwright-report
 /public/css
 /public/js
