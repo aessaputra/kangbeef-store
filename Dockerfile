@@ -4,7 +4,7 @@
 FROM php:8.3-cli AS vendor
 # Install Composer and required PHP extensions
 RUN set -eux; \
-    buildDeps="zlib1g-dev libzip-dev libicu-dev libjpeg-dev libpng-dev libwebp-dev libfreetype6-dev libgmp-dev $PHPIZE_DEPS"; \
+    buildDeps="zlib1g-dev libzip-dev libicu-dev libjpeg-dev libpng-dev libwebp-dev libfreetype6-dev libgmp-dev $PHPIZE_DEPS libmagickwand-dev"; \
     apt-get update; \
     apt-get install -y --no-install-recommends $buildDeps curl; \
     docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
