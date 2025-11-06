@@ -20,11 +20,14 @@ RUN set -eux; \
 WORKDIR /app
 # Copy composer files first to leverage Docker cache
 COPY composer.json composer.lock ./
+# Install composer dependencies without running scripts
 RUN --mount=type=cache,target=/tmp/cache \
     COMPOSER_CACHE_DIR=/tmp/cache \
-    composer install --no-dev --prefer-dist --no-interaction --no-ansi --no-progress
-# Copy application code and optimize autoloader
+    composer install --no-dev --prefer-dist --no-interaction --no-ansi --no-progress --no-scripts
+# Copy application code
 COPY . .
+# Now run the post-install scripts since artisan file is available
+RUN composer run-script post-install-cmd
 RUN composer dump-autoload --optimize --classmap-authoritative
 
 # -------- Stage 2: Frontend (Vite) --------
