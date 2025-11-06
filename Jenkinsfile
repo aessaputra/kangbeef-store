@@ -78,14 +78,14 @@ pipeline {
                     // Check required PHP extensions
                     sh """
                         docker run --rm ${imageTag} php -m | tee /tmp/phpm.txt
-                        grep -qiE '^intl\\$' /tmp/phpm.txt
-                        grep -qiE '^gd\\$' /tmp/phpm.txt
-                        grep -qiE '^imagick\\$' /tmp/phpm.txt
-                        grep -qiE '^pdo_mysql\\$' /tmp/phpm.txt
-                        grep -qiE '^bcmath\\$' /tmp/phpm.txt
-                        grep -qiE '^gmp\\$' /tmp/phpm.txt
-                        grep -qiE '^exif\\$' /tmp/phpm.txt
-                        grep -qiE '^zip\\$' /tmp/phpm.txt
+                        grep -qiE '^intl\\\$' /tmp/phpm.txt
+                        grep -qiE '^gd\\\$' /tmp/phpm.txt
+                        grep -qiE '^imagick\\\$' /tmp/phpm.txt
+                        grep -qiE '^pdo_mysql\\\$' /tmp/phpm.txt
+                        grep -qiE '^bcmath\\\$' /tmp/phpm.txt
+                        grep -qiE '^gmp\\\$' /tmp/phpm.txt
+                        grep -qiE '^exif\\\$' /tmp/phpm.txt
+                        grep -qiE '^zip\\\$' /tmp/phpm.txt
                     """
                 }
             }
