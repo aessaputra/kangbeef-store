@@ -20,6 +20,15 @@ pipeline {
     }
     
     stages {
+        stage('Preflight') {
+            steps {
+                sh 'docker version && docker compose version'
+                sshagent (credentials: ['prod-ssh']) {
+                    sh 'ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${DEPLOY_USER}@${DEPLOY_HOST} "echo DEPLOY OK && docker compose version"'
+                }
+            }
+        }
+        
         stage('Checkout') {
             steps {
                 checkout scm
@@ -113,6 +122,13 @@ pipeline {
                     usernameVariable: 'USER',
                     passwordVariable: 'PASS'
                 )]) {
+                    sshagent (credentials: ['prod-ssh']) {
+                        sh """
+                            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${DEPLOY_PATH}"
+                            scp -o StrictHostKeyChecking=no docker-compose.yml ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/docker-compose.yml
+                        """
+                    }
+                    
                     sshagent (credentials: ['prod-ssh']) {
                         script {
                             sh """
