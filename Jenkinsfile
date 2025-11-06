@@ -158,8 +158,35 @@ pipeline {
                             ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                                 "$SSH_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
 
+                            # Copy docker-compose.yml and .env file to server
                             scp -i "$SSH_KEY" -o StrictHostKeyChecking=no docker-compose.yml \
                                 "$SSH_USER@$DEPLOY_HOST:$DEPLOY_PATH/docker-compose.yml"
+                            
+                            # Check if .env file exists and copy it, otherwise create a basic one
+                            if [ -f .env ]; then
+                                scp -i "$SSH_KEY" -o StrictHostKeyChecking=no .env \
+                                    "$SSH_USER@$DEPLOY_HOST:$DEPLOY_PATH/.env"
+                            else
+                                echo "Warning: .env file not found, creating basic one"
+                                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                                    "$SSH_USER@$DEPLOY_HOST" "cat > '$DEPLOY_PATH/.env' << 'ENVEOF'
+APP_NAME=Kangbeef Store
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://kangbeef.com
+DB_CONNECTION=mysql
+DB_HOST=db
+DB_PORT=3306
+DB_DATABASE=store
+DB_USERNAME=store
+DB_PASSWORD=secure_password_here
+CACHE_DRIVER=redis
+SESSION_DRIVER=redis
+QUEUE_CONNECTION=redis
+REDIS_HOST=redis
+REDIS_PORT=6379
+ENVEOF"
+                            fi
 
                             # Login Docker di server
                             ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
@@ -170,7 +197,7 @@ pipeline {
                             # Pass variables explicitly as environment variables
                             ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                                 "$SSH_USER@$DEPLOY_HOST" \
-                                "REGISTRY='$REGISTRY' IMAGE_NAME='$IMAGE_NAME' BUILD_NUMBER='$BUILD_NUMBER' DEPLOY_PATH='$DEPLOY_PATH' BACKUP_PATH='$BACKUP_PATH' bash -s" << 'EOF'
+                                "REGISTRY='$REGISTRY' IMAGE_NAME='$IMAGE_NAME' BUILD_NUMBER='$BUILD_NUMBER' DEPLOY_PATH='$DEPLOY_PATH' BACKUP_PATH='$BACKUP_PATH' MYSQL_ROOT_PASSWORD='${MYSQL_ROOT_PASSWORD:-secure_root_password_2023}' bash -s" << 'EOF'
 #!/bin/bash
 set -Eeuo pipefail
 
@@ -181,6 +208,7 @@ echo "IMAGE_NAME=$IMAGE_NAME"
 echo "BUILD_NUMBER=$BUILD_NUMBER"
 echo "DEPLOY_PATH=$DEPLOY_PATH"
 echo "BACKUP_PATH=$BACKUP_PATH"
+echo "MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD"
 
 cd "$DEPLOY_PATH"
 
@@ -188,13 +216,13 @@ APP_IMAGE="$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER"
 echo "DEBUG: APP_IMAGE=$APP_IMAGE"
 
 echo "Pulling latest app image..."
-docker compose pull app || true
+MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose pull app || true
 
 echo "Deploying new app container..."
-APP_IMAGE="$APP_IMAGE" docker compose up -d --no-deps --pull always --force-recreate app
+MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" APP_IMAGE="$APP_IMAGE" docker compose up -d --no-deps --pull always --force-recreate app
 
 echo "Ensuring queue & scheduler running..."
-docker compose up -d queue scheduler || true
+MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose up -d queue scheduler || true
 
 echo "Waiting for app health..."
 i=1
@@ -211,7 +239,12 @@ echo "Creating DB backup (if db exists)..."
 mkdir -p "$BACKUP_PATH"
 if docker compose ps db >/dev/null 2>&1; then
   DATE=$(date +%F-%H%M%S)
-  docker compose exec -T db sh -lc \
+  # Get MySQL credentials from .env file or use defaults
+  MYSQL_USER="${MYSQL_USER:-store}"
+  MYSQL_PASSWORD="${MYSQL_PASSWORD:-secure_password_here}"
+  MYSQL_DATABASE="${MYSQL_DATABASE:-store}"
+  
+  MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose exec -T db sh -lc \
     "mysqldump -u\"$MYSQL_USER\" -p\"$MYSQL_PASSWORD\" \"$MYSQL_DATABASE\"" \
     | gzip > "$BACKUP_PATH/store-${DATE}.sql.gz" || true
 fi
