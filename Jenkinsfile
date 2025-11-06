@@ -68,15 +68,17 @@ pipeline {
             steps {
                 script {
                     // Basic container tests and PHP extension verification
+                    def imageTag = "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
                     sh """
                         docker run --rm \
                             -e APP_ENV=testing \
-                            ${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} \
+                            ${imageTag} \
                             php -v
                     """
                     // Check required PHP extensions
+                    def imageTag = "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
                     sh """
-                        docker run --rm ${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} php -m | tee /tmp/phpm.txt
+                        docker run --rm ${imageTag} php -m | tee /tmp/phpm.txt
                         grep -qiE '^intl\\$' /tmp/phpm.txt
                         grep -qiE '^gd\\$' /tmp/phpm.txt
                         grep -qiE '^imagick\\$' /tmp/phpm.txt
@@ -98,9 +100,10 @@ pipeline {
                     passwordVariable: 'PASS'
                 )]) {
                     script {
+                        def imageTag = "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
                         sh """
                             echo "\$PASS" | docker login -u "\$USER" --password-stdin ${REGISTRY}
-                            docker push ${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
+                            docker push ${imageTag}
                             docker push ${REGISTRY}/${IMAGE_NAME}:latest
                             docker logout ${REGISTRY}
                         """
@@ -131,6 +134,7 @@ pipeline {
                     
                     sshagent (credentials: ['prod-ssh']) {
                         script {
+                            def imageTag = "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
                             sh """
                                 ssh -o StrictHostKeyChecking=no \
                                     -o ConnectTimeout=10 \
@@ -156,7 +160,7 @@ pipeline {
                                 
                                 # Deploy new version
                                 echo "Deploying new version..."
-                                APP_IMAGE=${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} \
+                                APP_IMAGE=${imageTag} \
                                 docker compose up -d --no-deps --pull always --force-recreate app
                                 
                                 # Update worker & scheduler services as well
@@ -220,25 +224,30 @@ pipeline {
                 stage('Promote to Staging') {
                     steps {
                         withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                            sh """
-                                echo "\$PASS" | docker login -u "\$USER" --password-stdin ${REGISTRY}
-                                docker pull ${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
-                                docker tag  ${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} ${REGISTRY}/${IMAGE_NAME}:staging
-                                docker push ${REGISTRY}/${IMAGE_NAME}:staging
-                                docker logout ${REGISTRY}
-                            """
+                            script {
+                                def imageTag = "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
+                                sh """
+                                    echo "\$PASS" | docker login -u "\$USER" --password-stdin ${REGISTRY}
+                                    docker pull ${imageTag}
+                                    docker tag  ${imageTag} ${REGISTRY}/${IMAGE_NAME}:staging
+                                    docker push ${REGISTRY}/${IMAGE_NAME}:staging
+                                    docker logout ${REGISTRY}
+                                """
+                            }
                         }
                     }
                 }
                 stage('Rollback Options') {
                     steps {
                         script {
+                            def currentBuild = "${BUILD_NUMBER}"
+                            def prevBuild = "${BUILD_NUMBER-1}"
                             echo "Available rollback options:"
-                            echo "Previous version: ${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER-1}"
+                            echo "Previous version: ${REGISTRY}/${IMAGE_NAME}:${prevBuild}"
                             echo "Staging version: ${REGISTRY}/${IMAGE_NAME}:staging"
                             echo ""
                             echo "To rollback, use one of these commands:"
-                            echo "APP_IMAGE=${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER-1} docker compose up -d --no-deps app && docker compose up -d queue scheduler"
+                            echo "APP_IMAGE=${REGISTRY}/${IMAGE_NAME}:${prevBuild} docker compose up -d --no-deps app && docker compose up -d queue scheduler"
                             echo "APP_IMAGE=${REGISTRY}/${IMAGE_NAME}:staging docker compose up -d --no-deps app && docker compose up -d queue scheduler"
                         }
                     }
@@ -267,33 +276,37 @@ pipeline {
                 echo "❌ Pipeline failed!"
                 echo "Rolling back..."
                 sshagent (credentials: ['prod-ssh']) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${DEPLOY_USER}@${DEPLOY_HOST} bash -lc 'set -Eeuo pipefail
-                          cd '"${DEPLOY_PATH}"'
+                    script {
+                        def currentBuild = "${BUILD_NUMBER}"
+                        def prevBuild = "${BUILD_NUMBER-1}"
+                        sh """
+                            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${DEPLOY_USER}@${DEPLOY_HOST} bash -lc 'set -Eeuo pipefail
+                              cd '"${DEPLOY_PATH}"'
 
-                          # Tentukan target rollback: previous build jika ada, else staging
-                          if [ -n "${BUILD_NUMBER}" ] && [ "${BUILD_NUMBER}" -gt 1 ]; then
-                            PREV=$(( ${BUILD_NUMBER} - 1 ))
-                            echo "Rolling back to previous: ${REGISTRY}/${IMAGE_NAME}:\${PREV}"
-                            APP_IMAGE=${REGISTRY}/${IMAGE_NAME}:\${PREV} docker compose up -d --no-deps --force-recreate app
-                          else
-                            echo "Rolling back to staging tag"
-                            APP_IMAGE=${REGISTRY}/${IMAGE_NAME}:staging docker compose up -d --no-deps --force-recreate app
-                          fi
+                              # Tentukan target rollback: previous build jika ada, else staging
+                              if [ -n "${currentBuild}" ] && [ "${currentBuild}" -gt 1 ]; then
+                                PREV=$(( ${currentBuild} - 1 ))
+                                echo "Rolling back to previous: ${REGISTRY}/${IMAGE_NAME}:\${PREV}"
+                                APP_IMAGE=${REGISTRY}/${IMAGE_NAME}:\${PREV} docker compose up -d --no-deps --force-recreate app
+                              else
+                                echo "Rolling back to staging tag"
+                                APP_IMAGE=${REGISTRY}/${IMAGE_NAME}:staging docker compose up -d --no-deps --force-recreate app
+                              fi
 
-                          # Update worker & scheduler services as well
-                          docker compose up -d queue scheduler
+                              # Update worker & scheduler services as well
+                              docker compose up -d queue scheduler
 
-                          # Tunggu sehat
-                          for i in {1..30}; do
-                            if docker compose exec -T app sh -lc 'curl -fsS http://localhost:8080/ >/dev/null'; then
-                              echo "Rollback healthy."
-                              break
-                            fi
-                            sleep 2
-                          done
-                        '
-                    """
+                              # Tunggu sehat
+                              for i in {1..30}; do
+                                if docker compose exec -T app sh -lc 'curl -fsS http://localhost:8080/ >/dev/null'; then
+                                  echo "Rollback healthy."
+                                  break
+                                fi
+                                sleep 2
+                              done
+                            '
+                        """
+                    }
                 }
             }
         }
