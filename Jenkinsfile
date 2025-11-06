@@ -159,7 +159,7 @@ pipeline {
                                 
                                 # Deploy new version
                                 echo "Deploying new version..."
-                                APP_IMAGE=${imageTag} \
+                                APP_IMAGE=\${imageTag} \
                                 docker compose up -d --no-deps --pull always --force-recreate app
                                 
                                 # Update worker & scheduler services as well
@@ -246,8 +246,8 @@ pipeline {
                             echo "Staging version: ${REGISTRY}/${IMAGE_NAME}:staging"
                             echo ""
                             echo "To rollback, use one of these commands:"
-                            echo "APP_IMAGE=${REGISTRY}/${IMAGE_NAME}:${prevBuild} docker compose up -d --no-deps app && docker compose up -d queue scheduler"
-                            echo "APP_IMAGE=${REGISTRY}/${IMAGE_NAME}:staging docker compose up -d --no-deps app && docker compose up -d queue scheduler"
+                            echo "APP_IMAGE=\${REGISTRY}/${IMAGE_NAME}:${prevBuild} docker compose up -d --no-deps app && docker compose up -d queue scheduler"
+                            echo "APP_IMAGE=\${REGISTRY}/${IMAGE_NAME}:staging docker compose up -d --no-deps app && docker compose up -d queue scheduler"
                         }
                     }
                 }
@@ -286,10 +286,10 @@ pipeline {
                               if [ -n "${currentBuild}" ] && [ "${currentBuild}" -gt 1 ]; then
                                 PREV=$(( ${currentBuild} - 1 ))
                                 echo "Rolling back to previous: ${REGISTRY}/${IMAGE_NAME}:\${PREV}"
-                                APP_IMAGE=${REGISTRY}/${IMAGE_NAME}:\${PREV} docker compose up -d --no-deps --force-recreate app
+                                APP_IMAGE=\${REGISTRY}/${IMAGE_NAME}:\${PREV} docker compose up -d --no-deps --force-recreate app
                               else
                                 echo "Rolling back to staging tag"
-                                APP_IMAGE=${REGISTRY}/${IMAGE_NAME}:staging docker compose up -d --no-deps --force-recreate app
+                                APP_IMAGE=\${REGISTRY}/${IMAGE_NAME}:staging docker compose up -d --no-deps --force-recreate app
                               fi
 
                               # Update worker & scheduler services as well
