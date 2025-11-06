@@ -1,7 +1,20 @@
 # syntax=docker/dockerfile:1
 
 # -------- Stage 1: Composer dependencies --------
-FROM composer:2 AS vendor
+FROM php:8.3-cli AS vendor
+# Install Composer and required PHP extensions
+RUN set -eux; \
+    buildDeps="zlib1g-dev libzip-dev libicu-dev libjpeg-dev libpng-dev libwebp-dev libfreetype6-dev libgmp-dev $PHPIZE_DEPS"; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends $buildDeps curl; \
+    docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
+    docker-php-ext-install -j"$(nproc)" gd intl bcmath gmp exif pdo_mysql zip calendar; \
+    pecl install imagick; docker-php-ext-enable imagick; \
+    apt-get purge -y --auto-remove $buildDeps; \
+    apt-get autoremove -y; \
+    rm -rf /var/lib/apt/lists/*; \
+    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
 WORKDIR /app
 # Copy composer files first to leverage Docker cache
 COPY composer.json composer.lock ./
