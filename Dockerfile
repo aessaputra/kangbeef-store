@@ -40,17 +40,29 @@ RUN npm run build
 FROM php:8.3-apache AS production
 
 # One block: install build dependencies + runtime utilities, build extensions, then purge build dependencies
+# Install PHP extensions & Imagick
 RUN set -eux; \
-  buildDeps="zlib1g-dev libzip-dev libicu-dev libjpeg-dev libpng-dev libwebp-dev libfreetype6-dev libgmp-dev $PHPIZE_DEPS"; \
-  runtimeDeps="curl libmagickwand-6.q16-6 gosu"; \
-  apt-get update; \
-  apt-get install -y --no-install-recommends libmagickwand-dev $buildDeps $runtimeDeps; \
-  docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
-  docker-php-ext-install -j"$(nproc)" gd intl bcmath gmp exif pdo_mysql zip; \
-  pecl install imagick; docker-php-ext-enable imagick; \
-  apt-get purge -y --auto-remove $buildDeps libmagickwand-dev; \
-  apt-get autoremove -y; \
-  rm -rf /var/lib/apt/lists/*
+    buildDeps=" \
+        zlib1g-dev \
+        libzip-dev \
+        libicu-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libwebp-dev \
+        libfreetype6-dev \
+        libgmp-dev \
+        $PHPIZE_DEPS \
+        libmagickwand-dev \
+    "; \
+    runtimeDeps="curl gosu imagemagick"; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends $buildDeps $runtimeDeps; \
+    docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
+    docker-php-ext-install -j"$(nproc)" gd intl bcmath gmp exif pdo_mysql zip; \
+    pecl install imagick; \
+    docker-php-ext-enable imagick; \
+    apt-get purge -y --auto-remove $PHPIZE_DEPS libmagickwand-dev; \
+    rm -rf /var/lib/apt/lists/*
 
 # Production OPcache configuration
 RUN { \
