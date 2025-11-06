@@ -101,10 +101,10 @@ pipeline {
                     script {
                         def imageTag = "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
                         sh """
-                            echo "\$PASS" | docker login -u "\$USER" --password-stdin ${REGISTRY}
+                            echo "\$PASS" | docker login -u "\$USER" --password-stdin \${REGISTRY}
                             docker push ${imageTag}
-                            docker push ${REGISTRY}/${IMAGE_NAME}:latest
-                            docker logout ${REGISTRY}
+                            docker push \${REGISTRY}/${IMAGE_NAME}:latest
+                            docker logout \${REGISTRY}
                         """
                     }
                 }
@@ -126,8 +126,8 @@ pipeline {
                 )]) {
                     sshagent (credentials: ['prod-ssh']) {
                         sh """
-                            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${DEPLOY_USER}@${DEPLOY_HOST} "mkdir -p ${DEPLOY_PATH}"
-                            scp -o StrictHostKeyChecking=no docker-compose.yml ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/docker-compose.yml
+                            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \${DEPLOY_USER}@\${DEPLOY_HOST} "mkdir -p \${DEPLOY_PATH}"
+                            scp -o StrictHostKeyChecking=no docker-compose.yml \${DEPLOY_USER}@\${DEPLOY_HOST}:\${DEPLOY_PATH}/docker-compose.yml
                         """
                     }
                     
@@ -137,13 +137,13 @@ pipeline {
                             sh """
                                 ssh -o StrictHostKeyChecking=no \
                                     -o ConnectTimeout=10 \
-                                    ${DEPLOY_USER}@${DEPLOY_HOST} bash -lc 'set -Eeuo pipefail
+                                    \${DEPLOY_USER}@\${DEPLOY_HOST} bash -lc 'set -Eeuo pipefail
                                 
                                 echo "Starting deployment..."
                                 cd '"\${DEPLOY_PATH}"'
                                 
                                 # Login to Docker registry for private images
-                                echo "\$PASS" | docker login -u "\$USER" --password-stdin ${REGISTRY}
+                                echo "\$PASS" | docker login -u "\$USER" --password-stdin \${REGISTRY}
                                 
                                 # Pull latest images
                                 echo "Pulling latest images..."
@@ -204,7 +204,7 @@ pipeline {
                                 docker image prune -f || true
                                 
                                 # Logout from Docker registry
-                                docker logout ${REGISTRY}
+                                docker logout \${REGISTRY}
                                 '
                         """
                     }
@@ -226,11 +226,11 @@ pipeline {
                             script {
                                 def imageTag = "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
                                 sh """
-                                    echo "\$PASS" | docker login -u "\$USER" --password-stdin ${REGISTRY}
+                                    echo "\$PASS" | docker login -u "\$USER" --password-stdin \${REGISTRY}
                                     docker pull ${imageTag}
-                                    docker tag  ${imageTag} ${REGISTRY}/${IMAGE_NAME}:staging
-                                    docker push ${REGISTRY}/${IMAGE_NAME}:staging
-                                    docker logout ${REGISTRY}
+                                    docker tag  ${imageTag} \${REGISTRY}/${IMAGE_NAME}:staging
+                                    docker push \${REGISTRY}/${IMAGE_NAME}:staging
+                                    docker logout \${REGISTRY}
                                 """
                             }
                         }
@@ -279,7 +279,7 @@ pipeline {
                         def currentBuild = "${BUILD_NUMBER}"
                         def prevBuild = "${BUILD_NUMBER-1}"
                         sh """
-                            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${DEPLOY_USER}@${DEPLOY_HOST} bash -lc 'set -Eeuo pipefail
+                            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \${DEPLOY_USER}@\${DEPLOY_HOST} bash -lc 'set -Eeuo pipefail
                               cd '"\${DEPLOY_PATH}"'
 
                               # Tentukan target rollback: previous build jika ada, else staging
