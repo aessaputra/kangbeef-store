@@ -26,8 +26,8 @@ RUN --mount=type=cache,target=/tmp/cache \
     composer install --no-dev --prefer-dist --no-interaction --no-ansi --no-progress --no-scripts
 # Copy application code
 COPY . .
-# Now run the post-install scripts since artisan file is available
-RUN composer run-script post-install-cmd
+# Now run the post-autoload-dump script since artisan file is available
+RUN composer run-script post-autoload-dump
 RUN composer dump-autoload --optimize --classmap-authoritative
 
 # -------- Stage 2: Frontend (Vite) --------
