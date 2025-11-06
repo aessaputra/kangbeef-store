@@ -128,9 +128,8 @@ pipeline {
         // --- 7. Deploy ke server Hestia (Hanya main/master) ---
         stage('Deploy') {
             when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
+                expression {
+                    return env.BRANCH_NAME == null || env.BRANCH_NAME == '' || env.BRANCH_NAME == 'main'
                 }
             }
             steps {
@@ -223,9 +222,8 @@ pipeline {
         // --- 8. Info rollback (tanpa eksekusi otomatis berbahaya) ---
         stage('Promote/Rollback Info') {
             when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
+                expression {
+                    return env.BRANCH_NAME == null || env.BRANCH_NAME == '' || env.BRANCH_NAME == 'main'
                 }
             }
             steps {
