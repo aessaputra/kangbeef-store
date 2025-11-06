@@ -84,7 +84,7 @@ storage/framework/views/*
 tests/
 
 # Package files
-package-lock.json
+# package-lock.json
 yarn.lock
 
 # Build artifacts that shouldn't be copied
