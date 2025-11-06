@@ -129,7 +129,7 @@ pipeline {
         stage('Deploy') {
             when {
                 expression {
-                    // Jalan jika BRANCH_NAME kosong (pipeline freestyle) atau main
+                    // Jalan jika BRANCH_NAME kosong (freestyle) atau main
                     return env.BRANCH_NAME == null || env.BRANCH_NAME == '' || env.BRANCH_NAME == 'main'
                 }
             }
@@ -172,7 +172,7 @@ pipeline {
 #!/bin/bash
 set -Eeuo pipefail
 
-# Inject value dari Jenkins env (sudah terisi sebelum dikirim)
+# Value dari Jenkins (sudah diexpand sebelum dikirim)
 REGISTRY="$REGISTRY"
 IMAGE_NAME="$IMAGE_NAME"
 BUILD_NUMBER="$BUILD_NUMBER"
@@ -194,21 +194,21 @@ docker compose up -d queue scheduler || true
 
 echo "Waiting for app health..."
 i=1
-while [ $i -le 30 ]; do
+while [ \$i -le 30 ]; do
   if docker compose exec -T app sh -lc "curl -fsS http://localhost:8080/ >/dev/null"; then
     echo "App is responding."
     break
   fi
   sleep 2
-  i=$((i+1))
+  i=\$((i+1))
 done
 
 echo "Creating DB backup (if db exists)..."
 mkdir -p "$BACKUP_PATH"
 if docker compose ps db >/dev/null 2>&1; then
-  DATE=$(date +%F-%H%M%S)
+  DATE=\$(date +%F-%H%M%S)
   docker compose exec -T db sh -lc \
-    "mysqldump -u\"$MYSQL_USER\" -p\"$MYSQL_PASSWORD\" \"$MYSQL_DATABASE\"" \
+    "mysqldump -u\"\$MYSQL_USER\" -p\"\$MYSQL_PASSWORD\" \"\$MYSQL_DATABASE\"" \
     | gzip > "$BACKUP_PATH/store-${DATE}.sql.gz" || true
 fi
 
