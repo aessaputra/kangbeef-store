@@ -68,11 +68,9 @@ pipeline {
 
                 # Setup multi-platform build support
                 docker run --privileged --rm tonistiigi/binfmt --install all
-                export DOCKER_TLS_VERIFY=0
 
-                # Create Docker context to avoid TLS issues
-                docker context create my-context --docker host=unix:///var/run/docker.sock || true
-                docker buildx create --use --driver docker-container my-context
+                # Create buildx builder with docker driver (uses host Docker directly)
+                docker buildx create --use --name mybuilder || docker buildx use mybuilder
 
                 # Tarik cache kalau ada
                 docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
