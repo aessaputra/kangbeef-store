@@ -66,30 +66,28 @@ pipeline {
                     docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
 
                     # Patch Dockerfile untuk handle CRLF di docker-entrypoint.sh
-                    # Create a temporary script to modify the Dockerfile
-                    cat > patch_dockerfile.sh << 'EOF'
-#!/bin/bash
-# Use awk to replace the specific lines in Dockerfile
-awk '
-/^COPY docker\/docker-entrypoint\.sh \/usr\/local\/bin\/docker-entrypoint\.sh$/ {
-    print $0
-    getline
-    if (/^RUN chmod \+x \/usr\/local\/bin\/docker-entrypoint\.sh$/) {
-        print ""
-        print "# Paksa hilangkan CRLF & pastikan executable"
-        print "RUN sed -i '\''s/\\r$//'\'' /usr/local/bin/docker-entrypoint.sh \\"
-        print "    && chmod +x /usr/local/bin/docker-entrypoint.sh"
-    } else {
-        print $0
-    }
-    next
-}
-{ print $0 }
-' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
+                    # Create a temporary Python script to modify the Dockerfile
+                    cat > patch_dockerfile.py << 'EOF'
+import re
+
+with open('Dockerfile', 'r') as f:
+    content = f.read()
+
+# Replace the specific lines
+old_pattern = r'COPY docker/docker-entrypoint\.sh /usr/local/bin/docker-entrypoint\.sh\nRUN chmod \+x /usr/local/bin/docker-entrypoint\.sh'
+new_content = '''COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+# Paksa hilangkan CRLF & pastikan executable
+RUN sed -i 's/\\r$//' /usr/local/bin/docker-entrypoint.sh \\
+    && chmod +x /usr/local/bin/docker-entrypoint.sh'''
+
+content = re.sub(old_pattern, new_content, content)
+
+with open('Dockerfile', 'w') as f:
+    f.write(content)
 EOF
-                    chmod +x patch_dockerfile.sh
-                    ./patch_dockerfile.sh
-                    rm patch_dockerfile.sh
+                    python3 patch_dockerfile.py
+                    rm patch_dockerfile.py
 
                     docker build \
                       --target production \
