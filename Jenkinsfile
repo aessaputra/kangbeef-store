@@ -66,33 +66,40 @@ pipeline {
             sh '''
                 set -euxo pipefail
 
-                # Setup multi-platform build support
-                docker run --privileged --rm tonistiigi/binfmt --install all
+                # Pastikan tidak ada env TLS yang ganggu
+                unset DOCKER_TLS_VERIFY DOCKER_CERT_PATH DOCKER_HOST || true
 
-                # Create contexts for different platforms (pointing to same daemon for emulation)
-                docker context create node-amd64 --docker host=unix:///var/run/docker.sock || true
-                docker context create node-arm64 --docker host=unix:///var/run/docker.sock || true
+                # Aktifkan QEMU/binfmt untuk arsitektur non-native
+                docker run --privileged --rm tonistiigi/binfmt --install all || true
 
-                # Create buildx builder with docker driver and multiple nodes for multi-platform support
-                docker buildx create --use --driver docker --name multiplatform-builder node-amd64
-                docker buildx create --append --name multiplatform-builder node-arm64 || docker buildx use multiplatform-builder
+                # Buat builder buildx kalau belum ada
+                if ! docker buildx inspect kb-multi-builder >/dev/null 2>&1; then
+                  docker buildx create \
+                    --name kb-multi-builder \
+                    --driver docker-container \
+                    --use
+                else
+                  docker buildx use kb-multi-builder
+                fi
 
-                # Tarik cache kalau ada
-                docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
+                # Bootstrap builder
+                docker buildx inspect --bootstrap
 
-                # Build image multi-platform (amd64 & arm64)
+                # Tarik cache lama kalau ada
+                docker pull "$REGISTRY/$IMAGE_NAME:latest" || true || echo "No previous cache image"
+
+                # Build multi-arch + langsung push ke registry
                 docker buildx build \
-                --platform=linux/amd64,linux/arm64 \
-                --target production \
-                --cache-from "$REGISTRY/$IMAGE_NAME:latest" \
-                --build-arg BUILDKIT_INLINE_CACHE=1 \
-                --label org.opencontainers.image.source="$GIT_URL" \
-                --label org.opencontainers.image.revision="$GIT_COMMIT" \
-                -f Dockerfile \
-                -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
-                -t "$REGISTRY/$IMAGE_NAME:latest" \
-                --push \
-                .
+                  --platform linux/amd64,linux/arm64 \
+                  --target production \
+                  --cache-from type=registry,ref="$REGISTRY/$IMAGE_NAME:latest" \
+                  --build-arg BUILDKIT_INLINE_CACHE=1 \
+                  --label org.opencontainers.image.source="$GIT_URL" \
+                  --label org.opencontainers.image.revision="$GIT_COMMIT" \
+                  -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
+                  -t "$REGISTRY/$IMAGE_NAME:latest" \
+                  --push \
+                  .
             '''
         }
     }
