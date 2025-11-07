@@ -98,14 +98,15 @@ stage('Build Multi-Arch') {
               docker buildx inspect kb-multi-builder
 
               # 4) Build multi-arch image
-              docker buildx build \
-                --platform linux/amd64,linux/arm64 \
-                --target production \
-                --build-arg BUILDKIT_INLINE_CACHE=1 \
-                --cache-from type=registry,ref="$REGISTRY/$IMAGE_NAME:latest" \
-                -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
-                -t "$REGISTRY/$IMAGE_NAME:latest" \
-                .
+               docker buildx build \
+                 --platform linux/amd64,linux/arm64 \
+                 --target production \
+                 --build-arg BUILDKIT_INLINE_CACHE=1 \
+                 --cache-from type=registry,ref="$REGISTRY/$IMAGE_NAME:latest" \
+                 --push \
+                 -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
+                 -t "$REGISTRY/$IMAGE_NAME:latest" \
+                 .
 
               docker logout "$REGISTRY" || true
             '''
@@ -114,14 +115,17 @@ stage('Build Multi-Arch') {
 }
 
         // 5. Test image hasil build
-        stage('Test Image') {
-            steps {
-                sh '''
-                    set -euxo pipefail
-                    IMAGE_TAG="$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER"
+         stage('Test Image') {
+             steps {
+                 sh '''
+                     set -euxo pipefail
+                     IMAGE_TAG="$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER"
 
-                    # PHP jalan?
-                    docker run --rm -e APP_ENV=testing "$IMAGE_TAG" php -v
+                     # Pull image dari registry
+                     docker pull "$IMAGE_TAG"
+
+                     # PHP jalan?
+                     docker run --rm -e APP_ENV=testing "$IMAGE_TAG" php -v
 
                     # Ekstensi penting ada?
                     docker run --rm "$IMAGE_TAG" php -m | tee /tmp/phpm.txt
