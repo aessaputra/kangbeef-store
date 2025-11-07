@@ -61,46 +61,48 @@ pipeline {
         }
 
         // 4. Build image production
-    stage('Build') {
+    stage('Build & Push Multi-Arch') {
         steps {
-            sh '''
-                set -euxo pipefail
+            withCredentials([usernamePassword(
+                credentialsId: 'dockerhub-creds',
+                usernameVariable: 'USER',
+                passwordVariable: 'PASS'
+            )]) {
+                sh '''
+                  set -euxo pipefail
 
-                # Pastikan tidak ada env TLS yang ganggu
-                unset DOCKER_TLS_VERIFY DOCKER_CERT_PATH DOCKER_HOST || true
+                  # Login ke Docker Hub (pakai daemon di DOCKER_HOST=tcp://docker:2376)
+                  echo "$PASS" | docker login -u "$USER" --password-stdin "$REGISTRY"
 
-                # Aktifkan QEMU/binfmt untuk arsitektur non-native
-                docker run --privileged --rm tonistiigi/binfmt --install all || true
+                  # Pasang QEMU di daemon (jenkins-docker), ini yang memungkinkan multi-arch
+                  docker run --privileged --rm tonistiigi/binfmt --install all || true
 
-                # Buat builder buildx kalau belum ada
-                if ! docker buildx inspect kb-multi-builder >/dev/null 2>&1; then
-                  docker buildx create \
-                    --name kb-multi-builder \
-                    --driver docker-container \
-                    --use
-                else
-                  docker buildx use kb-multi-builder
-                fi
+                  # Siapkan buildx builder (di atas daemon yang sama)
+                  if ! docker buildx inspect kb-multi-builder >/dev/null 2>&1; then
+                    docker buildx create \
+                      --name kb-multi-builder \
+                      --driver docker-container \
+                      --use
+                  else
+                    docker buildx use kb-multi-builder
+                  fi
 
-                # Bootstrap builder
-                docker buildx inspect --bootstrap
+                  docker buildx inspect kb-multi-builder || true
 
-                # Tarik cache lama kalau ada
-                docker pull "$REGISTRY/$IMAGE_NAME:latest" || true || echo "No previous cache image"
+                  # Build dan push multi-arch
+                  docker buildx build \
+                    --platform linux/amd64,linux/arm64 \
+                    --target production \
+                    --build-arg BUILDKIT_INLINE_CACHE=1 \
+                    --cache-from type=registry,ref="$REGISTRY/$IMAGE_NAME:latest" \
+                    -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
+                    -t "$REGISTRY/$IMAGE_NAME:latest" \
+                    --push \
+                    .
 
-                # Build multi-arch + langsung push ke registry
-                docker buildx build \
-                  --platform linux/amd64,linux/arm64 \
-                  --target production \
-                  --cache-from type=registry,ref="$REGISTRY/$IMAGE_NAME:latest" \
-                  --build-arg BUILDKIT_INLINE_CACHE=1 \
-                  --label org.opencontainers.image.source="$GIT_URL" \
-                  --label org.opencontainers.image.revision="$GIT_COMMIT" \
-                  -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
-                  -t "$REGISTRY/$IMAGE_NAME:latest" \
-                  --push \
-                  .
-            '''
+                  docker logout "$REGISTRY" || true
+                '''
+            }
         }
     }
 
