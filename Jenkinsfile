@@ -69,9 +69,7 @@ pipeline {
                 # Setup multi-platform build support
                 docker run --privileged --rm tonistiigi/binfmt --install all
 
-                # Create buildx builder with docker driver for multi-platform support
-                # Docker driver supports multi-platform with binfmt and avoids TLS/connection issues
-                docker buildx create --use --driver docker --name multiplatform-builder || docker buildx use multiplatform-builder
+                # Use default buildx builder (docker driver) which supports multi-platform with binfmt
 
                 # Tarik cache kalau ada
                 docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
