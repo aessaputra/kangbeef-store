@@ -1,3 +1,47 @@
+# syntax=docker/dockerfile:1
+
+# -------- Stage 1: Composer dependencies --------
+FROM --platform=$BUILDPLATFORM php:8.3-cli AS vendor_stage
+
+RUN set -eux; \
+    buildDeps="zlib1g-dev libzip-dev libicu-dev libjpeg-dev libpng-dev libwebp-dev libfreetype6-dev libgmp-dev $PHPIZE_DEPS libmagickwand-dev"; \
+    runtimeDeps="libzip5 libpng16-16 libjpeg62-turbo libwebp7 libfreetype6 libgmp10 libicu76 libgomp1 imagemagick"; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends $buildDeps $runtimeDeps curl; \
+    docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
+    docker-php-ext-install -j"$(nproc)" gd intl bcmath gmp exif pdo_mysql zip calendar; \
+    docker-php-ext-enable gd intl bcmath gmp exif pdo_mysql zip calendar; \
+    pecl install imagick; docker-php-ext-enable imagick; \
+    apt-get purge -y --auto-remove $buildDeps; \
+    apt-get autoremove -y; \
+    rm -rf /var/lib/apt/lists/*; \
+    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+WORKDIR /app
+
+COPY composer.json composer.lock ./
+
+RUN --mount=type=cache,target=/tmp/cache \
+    COMPOSER_CACHE_DIR=/tmp/cache \
+    composer install --no-dev --prefer-dist --no-interaction --no-ansi --no-progress --no-scripts
+
+COPY . .
+
+RUN composer run-script post-autoload-dump
+RUN composer dump-autoload --optimize --classmap-authoritative
+
+# -------- Stage 2: Frontend (Vite) --------
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend_stage
+
+WORKDIR /app
+ENV NODE_OPTIONS=--max-old-space-size=2048
+
+COPY package*.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --fund=false
+
+COPY . .
+RUN npm run build
+
 # -------- Stage 3: Runtime Apache + PHP 8.3 --------
 FROM php:8.3-apache AS production
 
@@ -39,7 +83,7 @@ RUN { \
 # php.ini override
 COPY docker/php.ini /usr/local/etc/php/conf.d/zz-app.ini
 
-# Apache config (serve /public via port 8080)
+# Apache: serve /public on 8080
 RUN a2enmod rewrite headers expires remoteip
 COPY docker/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
 RUN sed -i 's#/var/www/html#/var/www/html/public#g' /etc/apache2/sites-available/000-default.conf \
@@ -48,25 +92,25 @@ RUN sed -i 's#/var/www/html#/var/www/html/public#g' /etc/apache2/sites-available
 
 WORKDIR /var/www/html
 
-# Copy code dasar (pastikan ini SETELAH semua stage build)
+# Copy source
 COPY --chown=www-data:www-data . .
 
-# Override dengan hasil build vendor & frontend
-COPY --from=vendor   --chown=www-data:www-data /app/vendor            /var/www/html/vendor
-COPY --from=vendor   --chown=www-data:www-data /app/bootstrap/cache   /var/www/html/bootstrap/cache
-COPY --from=frontend --chown=www-data:www-data /app/public/build      /var/www/html/public/build
+# Override dengan hasil build dari stage
+COPY --from=vendor_stage   --chown=www-data:www-data /app/vendor            /var/www/html/vendor
+COPY --from=vendor_stage   --chown=www-data:www-data /app/bootstrap/cache   /var/www/html/bootstrap/cache
+COPY --from=frontend_stage --chown=www-data:www-data /app/public/build      /var/www/html/public/build
 
-# Permission minimal
+# Permissions
 RUN chmod -R 775 storage bootstrap/cache
 
-# Entrypoint: pastikan LF + executable (fix CRLF di dalam image)
+# Entrypoint: pastikan LF & executable
 COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
     && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 
-# Bersihkan cache Laravel (tanpa butuh DB)
+# Bersihkan cache Laravel (tanpa DB)
 RUN php artisan config:clear 2>/dev/null || echo "Config clear failed" \
  && php artisan route:clear 2>/dev/null || echo "Route clear failed" \
  && php artisan view:clear 2>/dev/null || echo "View clear failed"
