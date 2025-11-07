@@ -61,12 +61,6 @@ services:
       start_period: 30s
     networks:
       - store-network
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETGID
-      - SETUID
 
   redis:
     image: redis:7-alpine
