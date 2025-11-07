@@ -14,14 +14,23 @@ pipeline {
 
     options {
         disableConcurrentBuilds()
-        buildDiscarder(logRotator(numToKeepStr: '10'))
+        buildDiscarder(logRotator(daysToKeepStr: '14', numToKeepStr: '10'))
+        skipDefaultCheckout(true)
         timeout(time: 30, unit: 'MINUTES')
         timestamps()
     }
 
     stages {
 
-        // 1. Cek Jenkins agent & koneksi SSH ke server
+        // 1. Prepare Workspace
+        stage('Prepare Workspace') {
+            steps {
+                cleanWs(deleteDirs: true, disableDeferredWipeout: true)
+                checkout scm
+            }
+        }
+
+        // 2. Cek Jenkins agent & koneksi SSH ke server
         stage('Preflight') {
             steps {
                 sh 'docker version'
@@ -39,13 +48,6 @@ pipeline {
                             "echo DEPLOY_OK && (docker compose version || docker-compose version || true)"
                         '''
                 }
-            }
-        }
-
-        // 2. Checkout dari Git
-        stage('Checkout') {
-            steps {
-                checkout scm
             }
         }
 
@@ -323,7 +325,7 @@ EOF
     post {
         always {
             sh 'docker image prune -f || true'
-            cleanWs()
+            cleanWs(deleteDirs: true, disableDeferredWipeout: true, notFailBuild: true)
         }
         success {
             echo "✅ Pipeline completed successfully!"

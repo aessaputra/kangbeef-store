@@ -101,11 +101,26 @@ COPY --from=frontend_stage --chown=www-data:www-data /app/public/build      /var
 # Permissions
 RUN chmod -R 775 storage bootstrap/cache
 
-# Entrypoint: pastikan LF & executable
-COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN sed -i 's/\r//g' /usr/local/bin/docker-entrypoint.sh \
-    && sed -i '1s/^\xef\xbb\xbf//' /usr/local/bin/docker-entrypoint.sh \
-    && chmod +x /usr/local/bin/docker-entrypoint.sh
+# Entrypoint: create script with proper LF
+RUN cat <<'EOF' > /usr/local/bin/docker-entrypoint.sh
+#!/bin/sh
+set -e
+
+# Check if storage and cache directories have correct permissions
+# Fix ownership if running as root (first run with named volumes)
+if [ "$(id -u)" = '0' ]; then
+    # Ensure storage and cache directories are owned by www-data
+    chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+
+    # Ensure proper permissions
+    chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+fi
+
+# Execute the main command as www-data
+exec gosu www-data "$@"
+EOF
+
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 
