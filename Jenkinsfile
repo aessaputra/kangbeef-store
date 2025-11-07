@@ -65,6 +65,32 @@ pipeline {
                     # Tarik cache jika ada
                     docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
 
+                    # Patch Dockerfile untuk handle CRLF di docker-entrypoint.sh
+                    # Create a temporary script to modify the Dockerfile
+                    cat > patch_dockerfile.sh << 'EOF'
+#!/bin/bash
+# Use awk to replace the specific lines in Dockerfile
+awk '
+/^COPY docker\/docker-entrypoint\.sh \/usr\/local\/bin\/docker-entrypoint\.sh$/ {
+    print $0
+    getline
+    if (/^RUN chmod \+x \/usr\/local\/bin\/docker-entrypoint\.sh$/) {
+        print ""
+        print "# Paksa hilangkan CRLF & pastikan executable"
+        print "RUN sed -i '\''s/\\r$//'\'' /usr/local/bin/docker-entrypoint.sh \\"
+        print "    && chmod +x /usr/local/bin/docker-entrypoint.sh"
+    } else {
+        print $0
+    }
+    next
+}
+{ print $0 }
+' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
+EOF
+                    chmod +x patch_dockerfile.sh
+                    ./patch_dockerfile.sh
+                    rm patch_dockerfile.sh
+
                     docker build \
                       --target production \
                       --cache-from "$REGISTRY/$IMAGE_NAME:latest" \
