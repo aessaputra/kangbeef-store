@@ -162,16 +162,15 @@ pipeline {
                             scp -i "$SSH_KEY" -o StrictHostKeyChecking=no docker-compose.yml \
                                 "$SSH_USER@$DEPLOY_HOST:$DEPLOY_PATH/docker-compose.yml"
                             
-                            # Check if .env file exists and copy it, fail if not found
-                            if [ -f .env ]; then
-                                scp -i "$SSH_KEY" -o StrictHostKeyChecking=no .env \
-                                    "$SSH_USER@$DEPLOY_HOST:$DEPLOY_PATH/.env"
-                                echo ".env file copied successfully"
-                            else
-                                echo "ERROR: .env file not found. Deployment requires a valid .env file."
-                                echo "Please create .env file with proper production configuration and commit it to the repository."
-                                exit 1
-                            fi
+                            # Copy .env file to server (if it exists locally)
+                            scp -i "$SSH_KEY" -o StrictHostKeyChecking=no .env \
+                                "$SSH_USER@$DEPLOY_HOST:$DEPLOY_PATH/.env" || true
+                            echo ".env file copy attempted (if it existed locally)"
+                            
+                            # Check if .env file exists on server
+                            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                                "$SSH_USER@$DEPLOY_HOST" \
+                                "if [ ! -f '$DEPLOY_PATH/.env' ]; then echo 'ERROR: .env not found in $DEPLOY_PATH on server. Please create it manually.'; exit 1; fi"
 
                             # Login Docker di server
                             ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
