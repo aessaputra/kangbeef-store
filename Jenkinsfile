@@ -73,8 +73,11 @@ pipeline {
                 docker context create unix-context --docker host=unix:///var/run/docker.sock || true
 
                 # Create buildx builder with docker-container driver for multi-platform support
-                # Use the unix context and network=host for proper daemon connection
-                docker buildx create --use --driver docker-container --driver-opt network=host --name multiplatform-builder unix-context || docker buildx use multiplatform-builder
+                # Use unix context, network=host, and mount docker socket for daemon connection
+                docker buildx create --use --driver docker-container \
+                  --driver-opt network=host \
+                  --driver-opt mounts=type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+                  --name multiplatform-builder unix-context || docker buildx use multiplatform-builder
 
                 # Tarik cache kalau ada
                 docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
