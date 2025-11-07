@@ -21,7 +21,7 @@ pipeline {
 
     stages {
 
-        // --- 1. Sanity check Jenkins agent & SSH ke server deploy ---
+        // 1. Cek docker & SSH ke server
         stage('Preflight') {
             steps {
                 sh 'docker version'
@@ -41,14 +41,14 @@ pipeline {
             }
         }
 
-        // --- 2. Checkout source dari GitHub ---
+        // 2. Checkout dari Git
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
-        // --- 3. Lint Dockerfile ---
+        // 3. Lint Dockerfile (non-blocking)
         stage('Lint Dockerfile') {
             steps {
                 sh 'docker pull hadolint/hadolint || true'
@@ -56,64 +56,40 @@ pipeline {
             }
         }
 
-        // --- 4. Build image production ---
+        // 4. Build image (single-arch, untuk test lokal)
         stage('Build') {
             steps {
                 sh '''
                     set -euxo pipefail
 
-                    # Tarik cache jika ada
+                    # Tarik cache jika ada (optional)
                     docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
 
-                    # Patch Dockerfile untuk handle CRLF di docker-entrypoint.sh
-                    # Create a temporary Python script to modify the Dockerfile
-                    cat > patch_dockerfile.py << 'EOF'
-import re
-
-with open('Dockerfile', 'r') as f:
-    content = f.read()
-
-# Replace the specific lines
-old_pattern = r'COPY docker/docker-entrypoint\.sh /usr/local/bin/docker-entrypoint\.sh\nRUN chmod \+x /usr/local/bin/docker-entrypoint\.sh'
-new_content = '''COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-
-# Paksa hilangkan CRLF & pastikan executable
-RUN sed -i 's/\\r$//' /usr/local/bin/docker-entrypoint.sh \\
-    && chmod +x /usr/local/bin/docker-entrypoint.sh'''
-
-content = re.sub(old_pattern, new_content, content)
-
-with open('Dockerfile', 'w') as f:
-    f.write(content)
-EOF
-                    python3 patch_dockerfile.py
-                    rm patch_dockerfile.py
+                    # ASUMSI: Dockerfile sudah punya:
+                    # COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+                    # RUN sed -i 's/\\r$//' /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
 
                     docker build \
                       --target production \
-                      --cache-from "$REGISTRY/$IMAGE_NAME:latest" \
                       --build-arg BUILDKIT_INLINE_CACHE=1 \
                       --label org.opencontainers.image.source="$GIT_URL" \
                       --label org.opencontainers.image.revision="$GIT_COMMIT" \
                       -f Dockerfile \
-                      -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
-                      -t "$REGISTRY/$IMAGE_NAME:latest" \
+                      -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER-local" \
                       .
                 '''
             }
         }
 
-        // --- 5. Test image hasil build ---
+        // 5. Test image hasil build lokal
         stage('Test Image') {
             steps {
                 sh '''
                     set -euxo pipefail
-                    IMAGE_TAG="$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER"
+                    IMAGE_TAG="$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER-local"
 
-                    # Cek PHP jalan
                     docker run --rm -e APP_ENV=testing "$IMAGE_TAG" php -v
 
-                    # Cek ekstensi PHP wajib
                     docker run --rm "$IMAGE_TAG" php -m | tee /tmp/phpm.txt
 
                     grep -qiE '^intl$'      /tmp/phpm.txt
@@ -128,7 +104,7 @@ EOF
             }
         }
 
-        // --- 6. Push ke Docker Hub ---
+        // 6. Build & Push multi-arch ke Docker Hub (amd64 + arm64)
         stage('Push') {
             steps {
                 withCredentials([usernamePassword(
@@ -138,22 +114,36 @@ EOF
                 )]) {
                     sh '''
                         set -euxo pipefail
+
                         echo "$PASS" | docker login -u "$USER" --password-stdin "$REGISTRY"
 
-                        docker push "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER"
-                        docker push "$REGISTRY/$IMAGE_NAME:latest"
+                        # Setup buildx builder
+                        docker buildx create --name kb-builder || true
+                        docker buildx use kb-builder
 
-                        docker logout "$REGISTRY"
+                        # Build multi-arch dan push langsung
+                        docker buildx build \
+                          --platform linux/amd64,linux/arm64 \
+                          --target production \
+                          --build-arg BUILDKIT_INLINE_CACHE=1 \
+                          --label org.opencontainers.image.source="$GIT_URL" \
+                          --label org.opencontainers.image.revision="$GIT_COMMIT" \
+                          -f Dockerfile \
+                          -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
+                          -t "$REGISTRY/$IMAGE_NAME:latest" \
+                          --push \
+                          .
+
+                        docker logout "$REGISTRY" || true
                     '''
                 }
             }
         }
 
-        // --- 7. Deploy ke server Hestia (Hanya main/master) ---
+        // 7. Deploy ke server (branch main / freestyle)
         stage('Deploy') {
             when {
                 expression {
-                    // Jalan kalau freestyle (BRANCH_NAME kosong) atau main
                     return env.BRANCH_NAME == null || env.BRANCH_NAME == '' || env.BRANCH_NAME == 'main'
                 }
             }
@@ -216,7 +206,7 @@ APP_IMAGE="$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER"
 echo "Using APP_IMAGE=$APP_IMAGE"
 
 echo "Pulling app image..."
-docker compose pull app || true
+APP_IMAGE="$APP_IMAGE" docker compose pull app || true
 
 echo "Stopping existing stack..."
 docker compose down || true
@@ -257,7 +247,6 @@ echo "Creating DB backup (if db exists)..."
 mkdir -p "$BACKUP_PATH"
 if docker compose ps db >/dev/null 2>&1; then
   DATE=$(date +%F-%H%M%S)
-  # Ambil dari .env via docker compose (env sudah ter-load ke service)
   MYSQL_USER="${MYSQL_USER:-store}"
   MYSQL_PASSWORD="${MYSQL_PASSWORD:-secure_password_here}"
   MYSQL_DATABASE="${MYSQL_DATABASE:-store}"
@@ -287,7 +276,7 @@ EOF
             }
         }
 
-        // --- 8. Info rollback (tanpa eksekusi otomatis berbahaya) ---
+        // 8. Info rollback
         stage('Promote/Rollback Info') {
             when {
                 expression {
@@ -300,7 +289,7 @@ EOF
                     echo "Rollback options:"
                     echo "- Previous: ${env.REGISTRY}/${env.IMAGE_NAME}:${prevBuild}"
                     echo "- Staging : ${env.REGISTRY}/${env.IMAGE_NAME}:staging"
-                    echo "Manual rollback commands (run di server deploy):"
+                    echo "Manual rollback:"
                     echo "APP_IMAGE=${env.REGISTRY}/${env.IMAGE_NAME}:${prevBuild} docker compose up -d --no-deps app && docker compose up -d queue scheduler"
                     echo "APP_IMAGE=${env.REGISTRY}/${env.IMAGE_NAME}:staging docker compose up -d --no-deps app && docker compose up -d queue scheduler"
                 }
@@ -313,15 +302,12 @@ EOF
             sh 'docker image prune -f || true'
             cleanWs()
         }
-
         success {
             echo "✅ Pipeline completed successfully!"
         }
-
         failure {
-            echo "❌ Pipeline failed. Check logs; rollback dilakukan manual pakai instruksi di stage Promote/Rollback Info."
+            echo "❌ Pipeline failed. Cek log & rollback pakai instruksi di stage Promote/Rollback Info."
         }
-
         unstable {
             echo "⚠️ Pipeline completed with warnings!"
         }
