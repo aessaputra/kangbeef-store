@@ -43,7 +43,9 @@ COPY . .
 RUN npm run build
 
 # -------- Stage 3: Runtime Apache + PHP 8.3 --------
-FROM php:8.3-apache AS production
+FROM --platform=$BUILDPLATFORM php:8.3-apache AS production
+
+ARG PHPIZE_DEPS=autoconf \ dpkg-dev \ file \ g++ \ gcc \ libc-dev \ make \ pkg-config \ re2c
 
 # Install PHP extensions & Imagick
 RUN set -eux; \
@@ -56,7 +58,15 @@ RUN set -eux; \
         libwebp-dev \
         libfreetype6-dev \
         libgmp-dev \
-        $PHPIZE_DEPS \
+        autoconf \
+        dpkg-dev \
+        file \
+        g++ \
+        gcc \
+        libc-dev \
+        make \
+        pkg-config \
+        re2c \
         libmagickwand-dev \
     "; \
     runtimeDeps="curl gosu imagemagick libwebp7 libgomp1 libicu76"; \
@@ -66,7 +76,15 @@ RUN set -eux; \
     docker-php-ext-install -j"$(nproc)" gd intl bcmath gmp exif pdo_mysql zip; \
     pecl install imagick; \
     docker-php-ext-enable imagick; \
-    apt-get purge -y --auto-remove $PHPIZE_DEPS libmagickwand-dev; \
+    apt-get purge -y --auto-remove autoconf \
+        dpkg-dev \
+        file \
+        g++ \
+        gcc \
+        libc-dev \
+        make \
+        pkg-config \
+        re2c libmagickwand-dev; \
     rm -rf /var/lib/apt/lists/*
 
 # OPcache production
