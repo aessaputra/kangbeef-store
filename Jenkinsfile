@@ -69,10 +69,12 @@ pipeline {
                 # Setup multi-platform build support
                 docker run --privileged --rm tonistiigi/binfmt --install all
 
+                # Create a Docker context for unix socket to avoid TLS issues
+                docker context create unix-context --docker host=unix:///var/run/docker.sock || true
+
                 # Create buildx builder with docker-container driver for multi-platform support
-                # Unset TLS vars and use network=host to allow buildkit container to connect to host Docker daemon
-                unset DOCKER_TLS_VERIFY DOCKER_CERT_PATH
-                docker buildx create --use --driver docker-container --driver-opt network=host --name multiplatform-builder || docker buildx use multiplatform-builder
+                # Use the unix context and network=host for proper daemon connection
+                docker buildx create --use --driver docker-container --driver-opt network=host --name multiplatform-builder unix-context || docker buildx use multiplatform-builder
 
                 # Tarik cache kalau ada
                 docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
