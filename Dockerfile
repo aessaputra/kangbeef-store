@@ -10,12 +10,12 @@ RUN set -eux; \
     buildDeps="zlib1g-dev libzip-dev libicu-dev libjpeg-dev libpng-dev libwebp-dev libfreetype6-dev libgmp-dev $PHPIZE_DEPS libmagickwand-dev"; \
     runtimeDeps="libzip5 libpng16-16 libjpeg62-turbo libwebp7 libfreetype6 libgmp10 libicu76 libgomp1 imagemagick"; \
     apt-get update; \
-    apt-get install -y --no-install-recommends "$buildDeps" "$runtimeDeps" curl; \
+    apt-get install -y --no-install-recommends $buildDeps $runtimeDeps curl; \
     docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
     docker-php-ext-install -j"$(nproc)" gd intl bcmath gmp exif pdo_mysql zip calendar; \
     docker-php-ext-enable gd intl bcmath gmp exif pdo_mysql zip calendar; \
     pecl install imagick; docker-php-ext-enable imagick; \
-    apt-get purge -y --auto-remove "$buildDeps"; \
+    apt-get purge -y --auto-remove $buildDeps; \
     apt-get autoremove -y; \
     rm -rf /var/lib/apt/lists/*; \
     curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
@@ -76,7 +76,7 @@ RUN set -eux; \
     "; \
     runtimeDeps="curl gosu imagemagick libwebp7 libgomp1 libicu76"; \
     apt-get update; \
-    apt-get install -y --no-install-recommends "$buildDeps" "$runtimeDeps"; \
+    apt-get install -y --no-install-recommends $buildDeps $runtimeDeps; \
     docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
     docker-php-ext-install -j"$(nproc)" gd intl bcmath gmp exif pdo_mysql zip; \
     pecl install imagick; \
