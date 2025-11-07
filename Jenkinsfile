@@ -69,8 +69,8 @@ pipeline {
                 # Setup multi-platform build support
                 docker run --privileged --rm tonistiigi/binfmt --install all
 
-                # Create buildx builder with docker driver (uses host Docker directly)
-                docker buildx create --use --name mybuilder || docker buildx use mybuilder
+                # Use default buildx builder (should work with multi-platform after binfmt setup)
+                docker buildx inspect default || docker buildx create --use --name default
 
                 # Tarik cache kalau ada
                 docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
