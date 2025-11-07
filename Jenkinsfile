@@ -66,11 +66,15 @@ pipeline {
             sh '''
                 set -euxo pipefail
 
+                # Setup multi-platform build support
+                docker run --privileged --rm tonistiigi/binfmt --install all
+                docker buildx create --use --name multi-platform-builder || docker buildx use multi-platform-builder
+
                 # Tarik cache kalau ada
                 docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
 
                 # Build image multi-platform (amd64 & arm64)
-                docker build \
+                docker buildx build \
                 --platform=linux/amd64,linux/arm64 \
                 --target production \
                 --cache-from "$REGISTRY/$IMAGE_NAME:latest" \
@@ -80,6 +84,7 @@ pipeline {
                 -f Dockerfile \
                 -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
                 -t "$REGISTRY/$IMAGE_NAME:latest" \
+                --push \
                 .
             '''
         }
