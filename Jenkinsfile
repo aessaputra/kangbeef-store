@@ -21,7 +21,7 @@ pipeline {
 
     stages {
 
-        // 1. Cek docker & SSH ke server
+        // 1. Cek Jenkins agent & koneksi SSH ke server
         stage('Preflight') {
             steps {
                 sh 'docker version'
@@ -33,10 +33,11 @@ pipeline {
                     usernameVariable: 'SSH_USER'
                 )]) {
                     sh '''
+                        set -euxo pipefail
                         ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                             "$SSH_USER@$DEPLOY_HOST" \
                             "echo DEPLOY_OK && (docker compose version || docker-compose version || true)"
-                    '''
+                        '''
                 }
             }
         }
@@ -48,48 +49,53 @@ pipeline {
             }
         }
 
-        // 3. Lint Dockerfile (non-blocking)
+        // 3. Lint Dockerfile (opsional, tidak nge-fail pipeline)
         stage('Lint Dockerfile') {
-            steps {
-                sh 'docker pull hadolint/hadolint || true'
-                sh 'docker run --rm -i hadolint/hadolint < Dockerfile || true'
-            }
-        }
-
-        // 4. Build image (single-arch, untuk test lokal)
-        stage('Build') {
             steps {
                 sh '''
                     set -euxo pipefail
-
-                    # Tarik cache jika ada (optional)
-                    docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
-
-                    # ASUMSI: Dockerfile sudah punya:
-                    # COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-                    # RUN sed -i 's/\\r$//' /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
-
-                    docker build \
-                      --target production \
-                      --build-arg BUILDKIT_INLINE_CACHE=1 \
-                      --label org.opencontainers.image.source="$GIT_URL" \
-                      --label org.opencontainers.image.revision="$GIT_COMMIT" \
-                      -f Dockerfile \
-                      -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER-local" \
-                      .
+                    docker pull hadolint/hadolint || true
+                    docker run --rm -i hadolint/hadolint < Dockerfile || true
                 '''
             }
         }
 
-        // 5. Test image hasil build lokal
+        // 4. Build image production
+    stage('Build') {
+        steps {
+            sh '''
+                set -euxo pipefail
+
+                # Tarik cache kalau ada
+                docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
+
+                # Build image khusus untuk linux/arm64 (server kamu)
+                docker build \
+                --platform=linux/arm64 \
+                --target production \
+                --cache-from "$REGISTRY/$IMAGE_NAME:latest" \
+                --build-arg BUILDKIT_INLINE_CACHE=1 \
+                --label org.opencontainers.image.source="$GIT_URL" \
+                --label org.opencontainers.image.revision="$GIT_COMMIT" \
+                -f Dockerfile \
+                -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
+                -t "$REGISTRY/$IMAGE_NAME:latest" \
+                .
+            '''
+        }
+    }
+
+        // 5. Test image hasil build
         stage('Test Image') {
             steps {
                 sh '''
                     set -euxo pipefail
-                    IMAGE_TAG="$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER-local"
+                    IMAGE_TAG="$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER"
 
+                    # PHP jalan?
                     docker run --rm -e APP_ENV=testing "$IMAGE_TAG" php -v
 
+                    # Ekstensi penting ada?
                     docker run --rm "$IMAGE_TAG" php -m | tee /tmp/phpm.txt
 
                     grep -qiE '^intl$'      /tmp/phpm.txt
@@ -104,7 +110,7 @@ pipeline {
             }
         }
 
-        // 6. Build & Push multi-arch ke Docker Hub (amd64 + arm64)
+        // 6. Push ke Docker Hub
         stage('Push') {
             steps {
                 withCredentials([usernamePassword(
@@ -114,33 +120,18 @@ pipeline {
                 )]) {
                     sh '''
                         set -euxo pipefail
-
                         echo "$PASS" | docker login -u "$USER" --password-stdin "$REGISTRY"
 
-                        # Setup buildx builder
-                        docker buildx create --name kb-builder || true
-                        docker buildx use kb-builder
+                        docker push "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER"
+                        docker push "$REGISTRY/$IMAGE_NAME:latest"
 
-                        # Build multi-arch dan push langsung
-                        docker buildx build \
-                          --platform linux/amd64,linux/arm64 \
-                          --target production \
-                          --build-arg BUILDKIT_INLINE_CACHE=1 \
-                          --label org.opencontainers.image.source="$GIT_URL" \
-                          --label org.opencontainers.image.revision="$GIT_COMMIT" \
-                          -f Dockerfile \
-                          -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
-                          -t "$REGISTRY/$IMAGE_NAME:latest" \
-                          --push \
-                          .
-
-                        docker logout "$REGISTRY" || true
+                        docker logout "$REGISTRY"
                     '''
                 }
             }
         }
 
-        // 7. Deploy ke server (branch main / freestyle)
+        // 7. Deploy ke server (hanya main / freestyle)
         stage('Deploy') {
             when {
                 expression {
@@ -172,11 +163,11 @@ pipeline {
                             ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                                 "$SSH_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
 
-                            # Kirim docker-compose.yml
+                            # Kirim docker-compose.yml ke server
                             scp -i "$SSH_KEY" -o StrictHostKeyChecking=no docker-compose.yml \
                                 "$SSH_USER@$DEPLOY_HOST:$DEPLOY_PATH/docker-compose.yml"
 
-                            # Pastikan .env SUDAH ada di server (dikelola manual)
+                            # Pastikan .env DI SERVER sudah ada (manual, tidak dioverwrite Jenkins)
                             ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                                 "$SSH_USER@$DEPLOY_HOST" \
                                 "if [ ! -f '$DEPLOY_PATH/.env' ]; then echo 'ERROR: .env not found in $DEPLOY_PATH on server. Please create it manually.'; exit 1; fi"
@@ -206,7 +197,7 @@ APP_IMAGE="$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER"
 echo "Using APP_IMAGE=$APP_IMAGE"
 
 echo "Pulling app image..."
-APP_IMAGE="$APP_IMAGE" docker compose pull app || true
+docker compose pull app || true
 
 echo "Stopping existing stack..."
 docker compose down || true
@@ -230,7 +221,7 @@ APP_IMAGE="$APP_IMAGE" docker compose up -d redis app queue scheduler
 echo "Current status:"
 docker compose ps
 
-echo "Checking app container logs (last 40 lines)..."
+echo "Checking app logs (last 40 lines)..."
 docker compose logs --tail=40 app || echo "No app logs yet"
 
 echo "Checking app health..."
@@ -247,6 +238,7 @@ echo "Creating DB backup (if db exists)..."
 mkdir -p "$BACKUP_PATH"
 if docker compose ps db >/dev/null 2>&1; then
   DATE=$(date +%F-%H%M%S)
+
   MYSQL_USER="${MYSQL_USER:-store}"
   MYSQL_PASSWORD="${MYSQL_PASSWORD:-secure_password_here}"
   MYSQL_DATABASE="${MYSQL_DATABASE:-store}"
@@ -291,7 +283,6 @@ EOF
                     echo "- Staging : ${env.REGISTRY}/${env.IMAGE_NAME}:staging"
                     echo "Manual rollback:"
                     echo "APP_IMAGE=${env.REGISTRY}/${env.IMAGE_NAME}:${prevBuild} docker compose up -d --no-deps app && docker compose up -d queue scheduler"
-                    echo "APP_IMAGE=${env.REGISTRY}/${env.IMAGE_NAME}:staging docker compose up -d --no-deps app && docker compose up -d queue scheduler"
                 }
             }
         }
@@ -306,7 +297,7 @@ EOF
             echo "✅ Pipeline completed successfully!"
         }
         failure {
-            echo "❌ Pipeline failed. Cek log & rollback pakai instruksi di stage Promote/Rollback Info."
+            echo "❌ Pipeline failed. Cek log di stage di atas."
         }
         unstable {
             echo "⚠️ Pipeline completed with warnings!"
