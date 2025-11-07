@@ -69,12 +69,13 @@ pipeline {
                 # Setup multi-platform build support
                 docker run --privileged --rm tonistiigi/binfmt --install all
 
-                # Create a Docker context for unix socket to avoid TLS issues
-                docker context create unix-context --docker host=unix:///var/run/docker.sock || true
+                # Create contexts for different platforms (pointing to same daemon for emulation)
+                docker context create node-amd64 --docker host=unix:///var/run/docker.sock || true
+                docker context create node-arm64 --docker host=unix:///var/run/docker.sock || true
 
-                # Create buildx builder with docker-container driver for multi-platform support
-                # Use unix context and network=host for proper daemon connection
-                docker buildx create --use --driver docker-container --driver-opt network=host --name multiplatform-builder unix-context || docker buildx use multiplatform-builder
+                # Create buildx builder with docker driver and multiple nodes for multi-platform support
+                docker buildx create --use --driver docker --name multiplatform-builder node-amd64
+                docker buildx create --append --name multiplatform-builder node-arm64 || docker buildx use multiplatform-builder
 
                 # Tarik cache kalau ada
                 docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
