@@ -129,7 +129,7 @@ pipeline {
         stage('Deploy') {
             when {
                 expression {
-                    // Jalan jika BRANCH_NAME kosong (freestyle) atau main
+                    // Jalan kalau freestyle (BRANCH_NAME kosong) atau main
                     return env.BRANCH_NAME == null || env.BRANCH_NAME == '' || env.BRANCH_NAME == 'main'
                 }
             }
@@ -154,20 +154,15 @@ pipeline {
                             echo "DEPLOY_PATH=$DEPLOY_PATH"
                             echo "BACKUP_PATH=$BACKUP_PATH"
 
-                            # Pastikan folder dan docker-compose.yml ada di server
+                            # Pastikan folder ada di server
                             ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                                 "$SSH_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
 
-                            # Copy docker-compose.yml and .env file to server
+                            # Kirim docker-compose.yml
                             scp -i "$SSH_KEY" -o StrictHostKeyChecking=no docker-compose.yml \
                                 "$SSH_USER@$DEPLOY_HOST:$DEPLOY_PATH/docker-compose.yml"
-                            
-                            # Copy .env file to server (if it exists locally)
-                            scp -i "$SSH_KEY" -o StrictHostKeyChecking=no .env \
-                                "$SSH_USER@$DEPLOY_HOST:$DEPLOY_PATH/.env" || true
-                            echo ".env file copy attempted (if it existed locally)"
-                            
-                            # Check if .env file exists on server
+
+                            # Pastikan .env SUDAH ada di server (dikelola manual)
                             ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                                 "$SSH_USER@$DEPLOY_HOST" \
                                 "if [ ! -f '$DEPLOY_PATH/.env' ]; then echo 'ERROR: .env not found in $DEPLOY_PATH on server. Please create it manually.'; exit 1; fi"
@@ -177,41 +172,37 @@ pipeline {
                                 "$SSH_USER@$DEPLOY_HOST" \
                                 "echo '$PASS' | docker login -u '$USER' --password-stdin '$REGISTRY'"
 
-                            # Kirim script deploy dan jalankan dengan bash di server
-                            # Pass variables explicitly as environment variables
+                            # Jalankan script deploy di server
                             ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                                 "$SSH_USER@$DEPLOY_HOST" \
-                                "REGISTRY='$REGISTRY' IMAGE_NAME='$IMAGE_NAME' BUILD_NUMBER='$BUILD_NUMBER' DEPLOY_PATH='$DEPLOY_PATH' BACKUP_PATH='$BACKUP_PATH' MYSQL_ROOT_PASSWORD='${MYSQL_ROOT_PASSWORD:-secure_root_password_2023}' bash -s" << 'EOF'
+                                "REGISTRY='$REGISTRY' IMAGE_NAME='$IMAGE_NAME' BUILD_NUMBER='$BUILD_NUMBER' DEPLOY_PATH='$DEPLOY_PATH' BACKUP_PATH='$BACKUP_PATH' bash -s" << 'EOF'
 #!/bin/bash
 set -Eeuo pipefail
 
-# Value dari Jenkins (diterima sebagai environment variables)
 echo "DEBUG: Remote env:"
 echo "REGISTRY=$REGISTRY"
 echo "IMAGE_NAME=$IMAGE_NAME"
 echo "BUILD_NUMBER=$BUILD_NUMBER"
 echo "DEPLOY_PATH=$DEPLOY_PATH"
 echo "BACKUP_PATH=$BACKUP_PATH"
-echo "MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD"
 
 cd "$DEPLOY_PATH"
 
 APP_IMAGE="$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER"
-echo "DEBUG: APP_IMAGE=$APP_IMAGE"
+echo "Using APP_IMAGE=$APP_IMAGE"
 
-echo "Pulling latest app image..."
-MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose pull app || true
+echo "Pulling app image..."
+docker compose pull app || true
 
-echo "Stopping existing containers..."
-MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose down || true
+echo "Stopping existing stack..."
+docker compose down || true
 
-echo "Starting database container first..."
-MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose up -d db
+echo "Starting database container..."
+docker compose up -d db
 
 echo "Waiting for database to be healthy..."
-sleep 10
 for i in {1..30}; do
-  if MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose exec -T db mysqladmin ping -h localhost --silent; then
+  if docker compose exec -T db mysqladmin ping -h localhost --silent; then
     echo "Database is healthy."
     break
   fi
@@ -219,43 +210,35 @@ for i in {1..30}; do
   sleep 2
 done
 
-echo "Deploying new app container..."
-MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" APP_IMAGE="$APP_IMAGE" docker compose up -d --no-deps --pull always --force-recreate app
+echo "Starting Redis, App, Queue, Scheduler..."
+APP_IMAGE="$APP_IMAGE" docker compose up -d redis app queue scheduler
 
-echo "Ensuring queue & scheduler running..."
-MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose up -d queue scheduler || true
+echo "Current status:"
+docker compose ps
 
-echo "Checking container status..."
-MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose ps
+echo "Checking app container logs (last 40 lines)..."
+docker compose logs --tail=40 app || echo "No app logs yet"
 
-echo "Checking database container logs (last 20 lines)..."
-MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose logs --tail=20 db || echo "Could not get db logs"
-
-echo "Checking app container logs (last 20 lines)..."
-MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose logs --tail=20 app || echo "Could not get app logs"
-
-echo "Waiting for app health..."
-i=1
-while [ $i -le 30 ]; do
-  if MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose exec -T app sh -lc "curl -fsS http://localhost:8080/ >/dev/null"; then
+echo "Checking app health..."
+for i in {1..30}; do
+  if docker compose exec -T app sh -lc "curl -fsS http://localhost:8080/ >/dev/null"; then
     echo "App is responding."
     break
   fi
   echo "Health check attempt $i/30..."
   sleep 2
-  i=$((i+1))
 done
 
 echo "Creating DB backup (if db exists)..."
 mkdir -p "$BACKUP_PATH"
 if docker compose ps db >/dev/null 2>&1; then
   DATE=$(date +%F-%H%M%S)
-  # Get MySQL credentials from .env file or use defaults
+  # Ambil dari .env via docker compose (env sudah ter-load ke service)
   MYSQL_USER="${MYSQL_USER:-store}"
   MYSQL_PASSWORD="${MYSQL_PASSWORD:-secure_password_here}"
   MYSQL_DATABASE="${MYSQL_DATABASE:-store}"
-  
-  MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" docker compose exec -T db sh -lc \
+
+  docker compose exec -T db sh -lc \
     "mysqldump -u\"$MYSQL_USER\" -p\"$MYSQL_PASSWORD\" \"$MYSQL_DATABASE\"" \
     | gzip > "$BACKUP_PATH/store-${DATE}.sql.gz" || true
 fi
@@ -272,7 +255,7 @@ docker compose exec -T app sh -lc "curl -fsS http://localhost:8080/ >/dev/null"
 echo "Cleanup..."
 docker image prune -f || true
 
-docker logout "$REGISTRY"
+docker logout "$REGISTRY" || true
 EOF
                         '''
                     }
