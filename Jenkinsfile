@@ -68,6 +68,7 @@ pipeline {
 
                 # Setup multi-platform build support
                 docker run --privileged --rm tonistiigi/binfmt --install all
+                export DOCKER_TLS_VERIFY=0
                 docker buildx create --use --driver docker-container
 
                 # Tarik cache kalau ada
