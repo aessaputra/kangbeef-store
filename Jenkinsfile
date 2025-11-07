@@ -70,7 +70,8 @@ pipeline {
                 docker run --privileged --rm tonistiigi/binfmt --install all
 
                 # Create buildx builder with docker-container driver for multi-platform support
-                # Use network=host to allow buildkit container to connect to host Docker daemon
+                # Unset TLS vars and use network=host to allow buildkit container to connect to host Docker daemon
+                unset DOCKER_TLS_VERIFY DOCKER_CERT_PATH
                 docker buildx create --use --driver docker-container --driver-opt network=host --name multiplatform-builder || docker buildx use multiplatform-builder
 
                 # Tarik cache kalau ada
