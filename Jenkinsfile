@@ -68,7 +68,7 @@ pipeline {
 
                 # Setup multi-platform build support
                 docker run --privileged --rm tonistiigi/binfmt --install all
-                docker buildx create --use --name multi-platform-builder || docker buildx use multi-platform-builder
+                docker buildx create --use --driver docker-container
 
                 # Tarik cache kalau ada
                 docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
