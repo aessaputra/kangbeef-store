@@ -60,7 +60,7 @@ pipeline {
             }
         }
 
-stage('Build & Push Multi-Arch') {
+stage('Build Multi-Arch') {
     steps {
         withCredentials([usernamePassword(
             credentialsId: 'dockerhub-creds',
@@ -97,7 +97,7 @@ stage('Build & Push Multi-Arch') {
 
               docker buildx inspect kb-multi-builder
 
-              # 4) Build & push multi-arch image
+              # 4) Build multi-arch image
               docker buildx build \
                 --platform linux/amd64,linux/arm64 \
                 --target production \
@@ -105,7 +105,6 @@ stage('Build & Push Multi-Arch') {
                 --cache-from type=registry,ref="$REGISTRY/$IMAGE_NAME:latest" \
                 -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
                 -t "$REGISTRY/$IMAGE_NAME:latest" \
-                --push \
                 .
 
               docker logout "$REGISTRY" || true
