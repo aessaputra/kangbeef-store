@@ -69,9 +69,9 @@ pipeline {
                 # Tarik cache kalau ada
                 docker pull "$REGISTRY/$IMAGE_NAME:latest" || true
 
-                # Build image khusus untuk linux/arm64 (server kamu)
+                # Build image multi-platform (amd64 & arm64)
                 docker build \
-                --platform=linux/arm64 \
+                --platform=linux/amd64,linux/arm64 \
                 --target production \
                 --cache-from "$REGISTRY/$IMAGE_NAME:latest" \
                 --build-arg BUILDKIT_INLINE_CACHE=1 \
