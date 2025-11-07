@@ -60,51 +60,59 @@ pipeline {
             }
         }
 
-        // 4. Build image production
-    stage('Build & Push Multi-Arch') {
-        steps {
-            withCredentials([usernamePassword(
-                credentialsId: 'dockerhub-creds',
-                usernameVariable: 'USER',
-                passwordVariable: 'PASS'
-            )]) {
-                sh '''
-                  set -euxo pipefail
+stage('Build & Push Multi-Arch') {
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: 'dockerhub-creds',
+            usernameVariable: 'USER',
+            passwordVariable: 'PASS'
+        )]) {
+            sh '''
+              set -euxo pipefail
 
-                  # Login ke Docker Hub (pakai daemon di DOCKER_HOST=tcp://docker:2376)
-                  echo "$PASS" | docker login -u "$USER" --password-stdin "$REGISTRY"
+              # Login ke Docker Hub (pakai docker daemon remote: jenkins-docker)
+              echo "$PASS" | docker login -u "$USER" --password-stdin "$REGISTRY"
 
-                  # Pasang QEMU di daemon (jenkins-docker), ini yang memungkinkan multi-arch
-                  docker run --privileged --rm tonistiigi/binfmt --install all || true
+              # 1) Pastikan docker context "dind" ada & menunjuk ke jenkins-docker
+              if ! docker context inspect dind >/dev/null 2>&1; then
+                docker context create dind \
+                  --docker "host=tcp://docker:2376,ca=/certs/client/ca.pem,cert=/certs/client/cert.pem,key=/certs/client/key.pem"
+              fi
 
-                  # Siapkan buildx builder (di atas daemon yang sama)
-                  if ! docker buildx inspect kb-multi-builder >/dev/null 2>&1; then
-                    docker buildx create \
-                      --name kb-multi-builder \
-                      --driver docker-container \
-                      --use
-                  else
-                    docker buildx use kb-multi-builder
-                  fi
+              # Pakai context dind untuk semua perintah berikut
+              docker context use dind
 
-                  docker buildx inspect kb-multi-builder || true
+              # 2) Install QEMU/binfmt di daemon dind (multi-arch support)
+              docker --context dind run --privileged --rm tonistiigi/binfmt --install all || true
 
-                  # Build dan push multi-arch
-                  docker buildx build \
-                    --platform linux/amd64,linux/arm64 \
-                    --target production \
-                    --build-arg BUILDKIT_INLINE_CACHE=1 \
-                    --cache-from type=registry,ref="$REGISTRY/$IMAGE_NAME:latest" \
-                    -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
-                    -t "$REGISTRY/$IMAGE_NAME:latest" \
-                    --push \
-                    .
+              # 3) Siapkan buildx builder yang nempel ke context dind
+              if ! docker buildx inspect kb-multi-builder >/dev/null 2>&1; then
+                docker buildx create \
+                  --name kb-multi-builder \
+                  --use \
+                  dind
+              else
+                docker buildx use kb-multi-builder
+              fi
 
-                  docker logout "$REGISTRY" || true
-                '''
-            }
+              docker buildx inspect kb-multi-builder
+
+              # 4) Build & push multi-arch image
+              docker buildx build \
+                --platform linux/amd64,linux/arm64 \
+                --target production \
+                --build-arg BUILDKIT_INLINE_CACHE=1 \
+                --cache-from type=registry,ref="$REGISTRY/$IMAGE_NAME:latest" \
+                -t "$REGISTRY/$IMAGE_NAME:$BUILD_NUMBER" \
+                -t "$REGISTRY/$IMAGE_NAME:latest" \
+                --push \
+                .
+
+              docker logout "$REGISTRY" || true
+            '''
         }
     }
+}
 
         // 5. Test image hasil build
         stage('Test Image') {
