@@ -280,27 +280,22 @@ pipeline {
                             exit 1
                         }
                         
-                        # Required extensions
-                        REQUIRED_EXTENSIONS=(
-                            "intl"
-                            "gd"
-                            "imagick"
-                            "pdo_mysql"
-                            "bcmath"
-                            "gmp"
-                            "exif"
-                            "zip"
-                        )
+                        # Required extensions (using space-separated string for sh compatibility)
+                        REQUIRED_EXTENSIONS="intl gd imagick pdo_mysql bcmath gmp exif zip"
+                        MISSING_EXTENSIONS=""
                         
-                        MISSING_EXTENSIONS=()
-                        for ext in "${REQUIRED_EXTENSIONS[@]}"; do
+                        for ext in ${REQUIRED_EXTENSIONS}; do
                             if ! grep -qiE "^${ext}$" /tmp/phpm.txt; then
-                                MISSING_EXTENSIONS+=("${ext}")
+                                if [ -z "${MISSING_EXTENSIONS}" ]; then
+                                    MISSING_EXTENSIONS="${ext}"
+                                else
+                                    MISSING_EXTENSIONS="${MISSING_EXTENSIONS} ${ext}"
+                                fi
                             fi
                         done
                         
-                        if [ ${#MISSING_EXTENSIONS[@]} -gt 0 ]; then
-                            echo "❌ Missing required PHP extensions: ${MISSING_EXTENSIONS[*]}"
+                        if [ -n "${MISSING_EXTENSIONS}" ]; then
+                            echo "❌ Missing required PHP extensions: ${MISSING_EXTENSIONS}"
                             exit 1
                         fi
                         
