@@ -452,21 +452,71 @@ if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
         echo "⚠️  WARNING: Server is ARM64 but image architecture is ${IMAGE_ARCH}"
         echo "   This may cause 'exec format error'. Re-pulling with platform specification..."
         docker pull --platform linux/arm64 "${APP_IMAGE}" || echo "⚠️ Failed to re-pull ARM64 image"
+        # Re-verify after re-pull
+        IMAGE_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+        echo "📦 Image architecture after re-pull: ${IMAGE_ARCH}"
     else
         echo "✅ Image architecture matches server (ARM64)"
     fi
+    
+    # Remove any AMD64 images with the same tag to avoid confusion
+    echo "🧹 Removing any AMD64 images with same tag to avoid conflicts..."
+    docker images "${APP_IMAGE}" --format "{{.ID}} {{.Repository}}:{{.Tag}} {{.Architecture}}" | \
+        grep -v "arm64\|aarch64" | \
+        awk '{print $1}' | \
+        xargs -r docker rmi -f 2>/dev/null || true
+    
+    # Set default platform for docker compose
+    export DOCKER_DEFAULT_PLATFORM=linux/arm64
+    echo "🔧 Set DOCKER_DEFAULT_PLATFORM=linux/arm64"
+    
 elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
     if [ "${IMAGE_ARCH}" != "amd64" ] && [ "${IMAGE_ARCH}" != "x86_64" ]; then
         echo "⚠️  WARNING: Server is AMD64 but image architecture is ${IMAGE_ARCH}"
         echo "   Re-pulling with platform specification..."
         docker pull --platform linux/amd64 "${APP_IMAGE}" || echo "⚠️ Failed to re-pull AMD64 image"
+        # Re-verify after re-pull
+        IMAGE_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+        echo "📦 Image architecture after re-pull: ${IMAGE_ARCH}"
     else
         echo "✅ Image architecture matches server (AMD64)"
     fi
+    
+    # Remove any ARM64 images with the same tag to avoid confusion
+    echo "🧹 Removing any ARM64 images with same tag to avoid conflicts..."
+    docker images "${APP_IMAGE}" --format "{{.ID}} {{.Repository}}:{{.Tag}} {{.Architecture}}" | \
+        grep -v "amd64\|x86_64" | \
+        awk '{print $1}' | \
+        xargs -r docker rmi -f 2>/dev/null || true
+    
+    # Set default platform for docker compose
+    export DOCKER_DEFAULT_PLATFORM=linux/amd64
+    echo "🔧 Set DOCKER_DEFAULT_PLATFORM=linux/amd64"
 fi
 
-# Pull image for compose (will use already pulled image if platform matches)
-echo "⬇️ Pulling images for docker compose..."
+# Final verification before compose pull
+echo "🔍 Final image architecture verification..."
+FINAL_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+echo "📦 Final image architecture: ${FINAL_ARCH}"
+
+if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
+    if [ "${FINAL_ARCH}" != "arm64" ] && [ "${FINAL_ARCH}" != "aarch64" ]; then
+        echo "❌ ERROR: Image architecture (${FINAL_ARCH}) does not match server (ARM64)"
+        echo "   This will cause 'exec format error'. Please check image build."
+        exit 1
+    fi
+elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
+    if [ "${FINAL_ARCH}" != "amd64" ] && [ "${FINAL_ARCH}" != "x86_64" ]; then
+        echo "❌ ERROR: Image architecture (${FINAL_ARCH}) does not match server (AMD64)"
+        echo "   This will cause 'exec format error'. Please check image build."
+        exit 1
+    fi
+fi
+
+# Pull image for compose with platform specification
+echo "⬇️ Pulling images for docker compose with platform ${PLATFORM}..."
+# Force pull with platform to ensure correct architecture
+docker pull --platform "${PLATFORM}" "${APP_IMAGE}" || echo "⚠️ Failed to pull with platform"
 docker compose pull app queue scheduler || echo "⚠️ Some image pulls failed, will use existing images"
 
 # Stop existing stack (gracefully)
@@ -495,9 +545,34 @@ if [ "$DB_READY" != "true" ]; then
     exit 1
 fi
 
+# Verify image one more time before starting containers
+echo "🔍 Final verification before starting containers..."
+CONTAINER_IMAGE_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+echo "📦 Container image architecture: ${CONTAINER_IMAGE_ARCH}"
+
+if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
+    if [ "${CONTAINER_IMAGE_ARCH}" != "arm64" ] && [ "${CONTAINER_IMAGE_ARCH}" != "aarch64" ]; then
+        echo "❌ CRITICAL ERROR: Image architecture (${CONTAINER_IMAGE_ARCH}) does not match server (ARM64)"
+        echo "   This will cause 'exec format error'. Aborting deployment."
+        echo "   Please check:"
+        echo "   1. Image was built for ARM64: docker buildx imagetools inspect ${APP_IMAGE}"
+        echo "   2. Image was pulled with --platform linux/arm64"
+        echo "   3. No conflicting images exist: docker images ${APP_IMAGE}"
+        exit 1
+    fi
+    echo "✅ Verified: Image is ARM64, safe to start containers"
+elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
+    if [ "${CONTAINER_IMAGE_ARCH}" != "amd64" ] && [ "${CONTAINER_IMAGE_ARCH}" != "x86_64" ]; then
+        echo "❌ CRITICAL ERROR: Image architecture (${CONTAINER_IMAGE_ARCH}) does not match server (AMD64)"
+        echo "   This will cause 'exec format error'. Aborting deployment."
+        exit 1
+    fi
+    echo "✅ Verified: Image is AMD64, safe to start containers"
+fi
+
 # Start Redis, App, Queue, and Scheduler
 echo "🚀 Starting Redis, App, Queue, and Scheduler..."
-APP_IMAGE="${APP_IMAGE}" docker compose up -d redis app queue scheduler
+APP_IMAGE="${APP_IMAGE}" DOCKER_DEFAULT_PLATFORM="${PLATFORM}" docker compose up -d redis app queue scheduler
 
 # Show current status
 echo "📊 Current container status:"
