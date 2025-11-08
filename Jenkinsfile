@@ -462,7 +462,7 @@ if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
     # Remove any AMD64 images with the same tag to avoid confusion
     echo "🧹 Removing any AMD64 images with same tag to avoid conflicts..."
     docker images "${APP_IMAGE}" --format "{{.ID}} {{.Repository}}:{{.Tag}} {{.Architecture}}" | \
-        grep -v "arm64\|aarch64" | \
+        grep -v -E "arm64|aarch64" | \
         awk '{print $1}' | \
         xargs -r docker rmi -f 2>/dev/null || true
     
@@ -485,7 +485,7 @@ elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
     # Remove any ARM64 images with the same tag to avoid confusion
     echo "🧹 Removing any ARM64 images with same tag to avoid conflicts..."
     docker images "${APP_IMAGE}" --format "{{.ID}} {{.Repository}}:{{.Tag}} {{.Architecture}}" | \
-        grep -v "amd64\|x86_64" | \
+        grep -v -E "amd64|x86_64" | \
         awk '{print $1}' | \
         xargs -r docker rmi -f 2>/dev/null || true
     
