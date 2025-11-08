@@ -82,7 +82,7 @@ services:
 
   # Queue Worker Service
   queue:
-    image: ${APP_IMAGE:-store-app:prod}
+    image: ${APP_IMAGE:-docker.io/aessaputra/kangbeef-store:latest}
     container_name: store-queue
     env_file: .env
     environment:
@@ -117,7 +117,7 @@ services:
 
   # Laravel Scheduler Service
   scheduler:
-    image: ${APP_IMAGE:-store-app:prod}
+    image: ${APP_IMAGE:-docker.io/aessaputra/kangbeef-store:latest}
     container_name: store-scheduler
     env_file: .env
     environment:

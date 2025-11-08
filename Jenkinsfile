@@ -222,7 +222,9 @@ pipeline {
                             docker buildx inspect kb-multi-builder
                             
                             # Build and push multi-arch image
-                            echo "Building and pushing image: ${FULL_IMAGE_NAME} and ${LATEST_IMAGE_NAME}"
+                            echo "Building and pushing multi-arch image: ${FULL_IMAGE_NAME} and ${LATEST_IMAGE_NAME}"
+                            echo "Platforms: linux/amd64, linux/arm64"
+                            
                             docker buildx build \
                                 --platform linux/amd64,linux/arm64 \
                                 --target production \
@@ -235,6 +237,14 @@ pipeline {
                                 .
                             
                             echo "✅ Image built and pushed successfully"
+                            
+                            # Verify multi-arch manifest
+                            echo "🔍 Verifying multi-arch manifest..."
+                            docker buildx imagetools inspect "${FULL_IMAGE_NAME}" || echo "⚠️ Could not inspect manifest"
+                            
+                            # Show manifest details
+                            echo "📋 Manifest details:"
+                            docker buildx imagetools inspect "${FULL_IMAGE_NAME}" --format '{{json .}}' | grep -o '"architecture":"[^"]*"' || echo "⚠️ Could not get manifest details"
                             
                             # Logout
                             docker logout "$REGISTRY" || true
@@ -408,9 +418,56 @@ cd "${DEPLOY_PATH}"
 APP_IMAGE="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
 echo "📦 Using APP_IMAGE=${APP_IMAGE}"
 
-# Pull latest image
-echo "⬇️ Pulling app image..."
-docker compose pull app || echo "⚠️ Image pull failed, will use existing image"
+# Detect server architecture
+SERVER_ARCH=$(uname -m)
+echo "🖥️  Server architecture: ${SERVER_ARCH}"
+
+# Set platform based on server architecture
+if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
+    PLATFORM="linux/arm64"
+    echo "📱 Detected ARM64 architecture, will pull ARM64 image"
+elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
+    PLATFORM="linux/amd64"
+    echo "💻 Detected AMD64 architecture, will pull AMD64 image"
+else
+    PLATFORM="linux/${SERVER_ARCH}"
+    echo "⚠️  Unknown architecture, will try to pull for ${PLATFORM}"
+fi
+
+# Pull latest image with platform specification
+echo "⬇️ Pulling app image for platform ${PLATFORM}..."
+docker pull --platform "${PLATFORM}" "${APP_IMAGE}" || {
+    echo "⚠️ Failed to pull ${APP_IMAGE} for ${PLATFORM}, trying without platform..."
+    docker pull "${APP_IMAGE}" || echo "⚠️ Image pull failed, will use existing image"
+}
+
+# Verify image architecture
+echo "🔍 Verifying image architecture..."
+IMAGE_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+echo "📦 Image architecture: ${IMAGE_ARCH}"
+
+# Verify architecture matches server
+if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
+    if [ "${IMAGE_ARCH}" != "arm64" ] && [ "${IMAGE_ARCH}" != "aarch64" ]; then
+        echo "⚠️  WARNING: Server is ARM64 but image architecture is ${IMAGE_ARCH}"
+        echo "   This may cause 'exec format error'. Re-pulling with platform specification..."
+        docker pull --platform linux/arm64 "${APP_IMAGE}" || echo "⚠️ Failed to re-pull ARM64 image"
+    else
+        echo "✅ Image architecture matches server (ARM64)"
+    fi
+elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
+    if [ "${IMAGE_ARCH}" != "amd64" ] && [ "${IMAGE_ARCH}" != "x86_64" ]; then
+        echo "⚠️  WARNING: Server is AMD64 but image architecture is ${IMAGE_ARCH}"
+        echo "   Re-pulling with platform specification..."
+        docker pull --platform linux/amd64 "${APP_IMAGE}" || echo "⚠️ Failed to re-pull AMD64 image"
+    else
+        echo "✅ Image architecture matches server (AMD64)"
+    fi
+fi
+
+# Pull image for compose (will use already pulled image if platform matches)
+echo "⬇️ Pulling images for docker compose..."
+docker compose pull app queue scheduler || echo "⚠️ Some image pulls failed, will use existing images"
 
 # Stop existing stack (gracefully)
 echo "🛑 Stopping existing stack..."
