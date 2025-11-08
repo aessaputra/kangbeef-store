@@ -88,12 +88,6 @@ pipeline {
         
         // Timestamps in console output
         timestamps()
-        
-        // AnsiColor for better console output
-        ansiColor('xterm')
-        
-        // Retry on failure (only for certain stages)
-        retry(1)
     }
 
     stages {
@@ -163,7 +157,7 @@ pipeline {
         // Stage 3: Lint Dockerfile (optional)
         stage('Lint Dockerfile') {
             when {
-                not { params.SKIP_LINT }
+                expression { !params.SKIP_LINT }
             }
             steps {
                 script {
@@ -253,7 +247,7 @@ pipeline {
         // Stage 5: Test Image
         stage('Test Image') {
             when {
-                not { params.SKIP_TESTS }
+                expression { !params.SKIP_TESTS }
             }
             steps {
                 script {
