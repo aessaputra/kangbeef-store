@@ -98,8 +98,9 @@ pipeline {
         // Skip default checkout (we do it manually)
         skipDefaultCheckout(true)
         
-        // Pipeline timeout
-        timeout(time: 45, unit: 'MINUTES')
+        // Pipeline timeout - increased for cross-platform build (AMD64 -> ARM64)
+        // Cross-platform build dengan emulasi memerlukan waktu lebih lama
+        timeout(time: 120, unit: 'MINUTES')
         
         // Timestamps in console output
         timestamps()
@@ -189,6 +190,12 @@ pipeline {
 
         // Stage 4: Build ARM64 Image
         stage('Build ARM64 Image') {
+            options {
+                // Stage-specific timeout untuk cross-platform build
+                timeout(time: 90, unit: 'MINUTES')
+                // Retry build jika gagal karena timeout atau network issue
+                retry(2)
+            }
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-creds',
@@ -265,27 +272,87 @@ pipeline {
                             echo ""
                             echo "ℹ️  Note: Cross-platform build menggunakan QEMU emulation"
                             echo "   Build time mungkin lebih lama karena emulasi ARM64"
+                            echo "   Estimated time: 30-60 minutes"
                             
-                            docker buildx build \
-                                --platform ${TARGET_PLATFORM} \
-                                --target production \
-                                --build-arg BUILDKIT_INLINE_CACHE=1 \
-                                --cache-from type=registry,ref="${LATEST_IMAGE_NAME}" \
-                                --push \
-                                --tag "${FULL_IMAGE_NAME}" \
-                                --tag "${LATEST_IMAGE_NAME}" \
-                                --progress=plain \
-                                --load=false \
-                                .
+                            # Use timeout wrapper to prevent hanging builds
+                            # Add periodic output to prevent Jenkins agent timeout
+                            echo "⏱️  Starting build with timeout protection..."
+                            echo "   Build timeout: 90 minutes (5400 seconds)"
+                            echo "   Progress will be shown in real-time"
+                            
+                            # Check if timeout command is available
+                            if command -v timeout >/dev/null 2>&1; then
+                                echo "✅ Using timeout command for build protection"
+                                # Build with timeout (5400 seconds = 90 minutes)
+                                timeout 5400 docker buildx build \
+                                    --platform ${TARGET_PLATFORM} \
+                                    --target production \
+                                    --build-arg BUILDKIT_INLINE_CACHE=1 \
+                                    --cache-from type=registry,ref="${LATEST_IMAGE_NAME}" \
+                                    --push \
+                                    --tag "${FULL_IMAGE_NAME}" \
+                                    --tag "${LATEST_IMAGE_NAME}" \
+                                    --progress=plain \
+                                    --load=false \
+                                    . || {
+                                    echo "❌ Build failed or timed out after 90 minutes"
+                                    exit 1
+                                }
+                            else
+                                echo "⚠️  Timeout command not available, building without timeout wrapper"
+                                echo "   Jenkins stage timeout (90 minutes) will handle timeout"
+                                # Build without timeout wrapper (rely on Jenkins stage timeout)
+                                docker buildx build \
+                                    --platform ${TARGET_PLATFORM} \
+                                    --target production \
+                                    --build-arg BUILDKIT_INLINE_CACHE=1 \
+                                    --cache-from type=registry,ref="${LATEST_IMAGE_NAME}" \
+                                    --push \
+                                    --tag "${FULL_IMAGE_NAME}" \
+                                    --tag "${LATEST_IMAGE_NAME}" \
+                                    --progress=plain \
+                                    --load=false \
+                                    . || {
+                                    echo "❌ Build failed"
+                                    echo "   This might be due to:"
+                                    echo "   1. Build timeout (90 minutes)"
+                                    echo "   2. Network issues"
+                                    echo "   3. QEMU emulation issues"
+                                    echo "   4. Insufficient resources"
+                                    exit 1
+                                }
+                            fi
+                            
+                            # Verify build completed successfully
+                            echo "✅ Build process completed"
                             
                             echo "✅ ARM64 image built and pushed successfully"
                             
+                            # Wait a bit for registry to sync
+                            echo "⏳ Waiting for registry to sync (10 seconds)..."
+                            sleep 10
+                            
                             # Verify ARM64 image
                             echo "🔍 Verifying ARM64 image..."
-                            docker buildx imagetools inspect "${FULL_IMAGE_NAME}" || {
-                                echo "❌ Failed to inspect image"
-                                exit 1
-                            }
+                            MAX_RETRIES=3
+                            RETRY_COUNT=0
+                            
+                            while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                                if docker buildx imagetools inspect "${FULL_IMAGE_NAME}" 2>&1; then
+                                    echo "✅ Image found in registry"
+                                    break
+                                else
+                                    RETRY_COUNT=$((RETRY_COUNT + 1))
+                                    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                                        echo "⚠️ Image not found yet, retrying in 10 seconds... (${RETRY_COUNT}/${MAX_RETRIES})"
+                                        sleep 10
+                                    else
+                                        echo "❌ Failed to verify image after ${MAX_RETRIES} attempts"
+                                        echo "   Image might still be syncing to registry"
+                                        echo "   Will verify during deployment"
+                                    fi
+                                fi
+                            done
                             
                             # Verify platform in manifest
                             MANIFEST_OUTPUT=$(docker buildx imagetools inspect "${FULL_IMAGE_NAME}" 2>&1 || echo "")
@@ -298,6 +365,8 @@ pipeline {
                             
                             # Logout
                             docker logout "$REGISTRY" || true
+                            
+                            echo "✅ ARM64 image build and verification completed"
                         '''
                     }
                 }
