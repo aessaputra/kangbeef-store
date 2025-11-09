@@ -279,6 +279,28 @@ pipeline {
                             echo "⏱️  Starting build with timeout protection..."
                             echo "   Build timeout: 90 minutes (5400 seconds)"
                             echo "   Progress will be shown in real-time"
+                            echo "   Keepalive output will be sent every 30 seconds to prevent agent timeout"
+                            
+                            # Start keepalive background process to prevent Jenkins agent timeout
+                            # This sends periodic output every 30 seconds to keep agent connection alive
+                            (
+                                while true; do
+                                    sleep 30
+                                    echo "💓 [KEEPALIVE] Build still running... $(date '+%Y-%m-%d %H:%M:%S')"
+                                done
+                            ) &
+                            KEEPALIVE_PID=$!
+                            
+                            # Function to cleanup keepalive on exit
+                            cleanup_keepalive() {
+                                if [ -n "${KEEPALIVE_PID}" ]; then
+                                    kill "${KEEPALIVE_PID}" 2>/dev/null || true
+                                    wait "${KEEPALIVE_PID}" 2>/dev/null || true
+                                fi
+                            }
+                            trap cleanup_keepalive EXIT INT TERM
+                            
+                            echo "✅ Keepalive process started (PID: ${KEEPALIVE_PID})"
                             
                             # Check if timeout command is available
                             if command -v timeout >/dev/null 2>&1; then
@@ -295,7 +317,9 @@ pipeline {
                                     --progress=plain \
                                     --load=false \
                                     . || {
-                                    echo "❌ Build failed or timed out after 90 minutes"
+                                    BUILD_EXIT_CODE=$?
+                                    echo "❌ Build failed or timed out after 90 minutes (exit code: ${BUILD_EXIT_CODE})"
+                                    cleanup_keepalive
                                     exit 1
                                 }
                             else
@@ -313,15 +337,20 @@ pipeline {
                                     --progress=plain \
                                     --load=false \
                                     . || {
-                                    echo "❌ Build failed"
+                                    BUILD_EXIT_CODE=$?
+                                    echo "❌ Build failed (exit code: ${BUILD_EXIT_CODE})"
                                     echo "   This might be due to:"
                                     echo "   1. Build timeout (90 minutes)"
                                     echo "   2. Network issues"
                                     echo "   3. QEMU emulation issues"
                                     echo "   4. Insufficient resources"
+                                    cleanup_keepalive
                                     exit 1
                                 }
                             fi
+                            
+                            # Stop keepalive process after successful build
+                            cleanup_keepalive
                             
                             # Verify build completed successfully
                             echo "✅ Build process completed"
