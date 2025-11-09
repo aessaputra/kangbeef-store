@@ -99,8 +99,8 @@ pipeline {
         skipDefaultCheckout(true)
         
         // Pipeline timeout - increased for cross-platform build (AMD64 -> ARM64)
-        // Cross-platform build dengan emulasi memerlukan waktu lebih lama
-        timeout(time: 120, unit: 'MINUTES')
+        // Cross-platform build dengan emulasi memerlukan waktu lebih lama (60-90+ menit)
+        timeout(time: 180, unit: 'MINUTES')
         
         // Timestamps in console output
         timestamps()
@@ -191,8 +191,9 @@ pipeline {
         // Stage 4: Build ARM64 Image
         stage('Build ARM64 Image') {
             options {
-                // Stage-specific timeout untuk cross-platform build
-                timeout(time: 90, unit: 'MINUTES')
+                // Stage-specific timeout untuk cross-platform build dengan emulasi
+                // Cross-platform build (AMD64 -> ARM64) memerlukan waktu 60-90+ menit
+                timeout(time: 150, unit: 'MINUTES')
                 // Retry build jika gagal karena timeout atau network issue
                 retry(2)
             }
@@ -272,12 +273,13 @@ pipeline {
                             echo ""
                             echo "ℹ️  Note: Cross-platform build menggunakan QEMU emulation"
                             echo "   Build time mungkin lebih lama karena emulasi ARM64"
-                            echo "   Estimated time: 30-60 minutes"
+                            echo "   Estimated time: 60-90 minutes (dengan emulasi)"
+                            echo "   Stage timeout: 150 minutes"
                             
                             # Use timeout wrapper to prevent hanging builds
                             # Add periodic output to prevent Jenkins agent timeout
                             echo "⏱️  Starting build with timeout protection..."
-                            echo "   Build timeout: 90 minutes (5400 seconds)"
+                            echo "   Build timeout: 150 minutes (9000 seconds)"
                             echo "   Progress will be shown in real-time"
                             echo "   Keepalive output will be sent every 30 seconds to prevent agent timeout"
                             
@@ -305,8 +307,8 @@ pipeline {
                             # Check if timeout command is available
                             if command -v timeout >/dev/null 2>&1; then
                                 echo "✅ Using timeout command for build protection"
-                                # Build with timeout (5400 seconds = 90 minutes)
-                                timeout 5400 docker buildx build \
+                                # Build with timeout (9000 seconds = 150 minutes)
+                                timeout 9000 docker buildx build \
                                     --platform ${TARGET_PLATFORM} \
                                     --target production \
                                     --build-arg BUILDKIT_INLINE_CACHE=1 \
@@ -318,13 +320,13 @@ pipeline {
                                     --load=false \
                                     . || {
                                     BUILD_EXIT_CODE=$?
-                                    echo "❌ Build failed or timed out after 90 minutes (exit code: ${BUILD_EXIT_CODE})"
+                                    echo "❌ Build failed or timed out after 150 minutes (exit code: ${BUILD_EXIT_CODE})"
                                     cleanup_keepalive
                                     exit 1
                                 }
                             else
                                 echo "⚠️  Timeout command not available, building without timeout wrapper"
-                                echo "   Jenkins stage timeout (90 minutes) will handle timeout"
+                                echo "   Jenkins stage timeout (150 minutes) will handle timeout"
                                 # Build without timeout wrapper (rely on Jenkins stage timeout)
                                 docker buildx build \
                                     --platform ${TARGET_PLATFORM} \
@@ -340,10 +342,11 @@ pipeline {
                                     BUILD_EXIT_CODE=$?
                                     echo "❌ Build failed (exit code: ${BUILD_EXIT_CODE})"
                                     echo "   This might be due to:"
-                                    echo "   1. Build timeout (90 minutes)"
+                                    echo "   1. Build timeout (150 minutes)"
                                     echo "   2. Network issues"
                                     echo "   3. QEMU emulation issues"
                                     echo "   4. Insufficient resources"
+                                    echo "   5. Build masih memerlukan waktu lebih lama (pertimbangkan build di ARM64 server)"
                                     cleanup_keepalive
                                     exit 1
                                 }
