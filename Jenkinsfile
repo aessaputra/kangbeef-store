@@ -1,22 +1,25 @@
 /**
- * Jenkins Pipeline untuk Kangbeef Store
+ * Jenkins Pipeline untuk Kangbeef Store - ARM64 Architecture
  * 
- * Best Practices Applied:
- * - Declarative Pipeline syntax
+ * Best Practices Applied (berdasarkan Jenkins Documentation):
+ * - Declarative Pipeline syntax untuk maintainability
  * - Parameterized builds untuk flexibility
- * - Parallel execution untuk optimasi
- * - Proper error handling dan retry logic
- * - Timeout handling
- * - Artifact archiving
- * - Proper credential management
- * - Health checks dan validation
- * - Cleanup dan notifications
+ * - Parallel execution untuk optimasi waktu build
+ * - Combined shell commands untuk mengurangi overhead
+ * - Proper error handling dengan set -euxo pipefail
+ * - Timeout handling untuk mencegah hanging builds
+ * - Artifact archiving dengan fingerprinting
+ * - Proper credential management dengan withCredentials
+ * - Health checks dan validation sebelum deployment
+ * - Cleanup di post section untuk resource management
+ * - ARM64-only build untuk konsistensi dan performa
+ * 
+ * Architecture: linux/arm64 (ARM64 only)
  */
 
 pipeline {
     agent any
 
-    // Parameters untuk flexibility
     parameters {
         choice(
             name: 'DEPLOY_ENV',
@@ -54,6 +57,9 @@ pipeline {
         // Docker configuration
         DOCKER_BUILDKIT          = "1"
         COMPOSE_DOCKER_CLI_BUILD = "1"
+        
+        // Architecture configuration - ARM64 only
+        TARGET_PLATFORM          = "linux/arm64"
         
         // Computed values
         IMAGE_TAG                = "${BUILD_NUMBER}${params.IMAGE_TAG_SUFFIX}"
@@ -172,8 +178,8 @@ pipeline {
             }
         }
 
-        // Stage 4: Build Multi-Arch Image
-        stage('Build Multi-Arch Image') {
+        // Stage 4: Build ARM64 Image
+        stage('Build ARM64 Image') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-creds',
@@ -181,8 +187,9 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
                     script {
-                        echo "🏗️ Building multi-architecture Docker image..."
+                        echo "🏗️ Building ARM64 Docker image..."
                         
+                        // Best Practice: Combine multiple shell commands into single sh step
                         sh '''
                             set -euxo pipefail
                             
@@ -202,31 +209,28 @@ pipeline {
                             # Use DinD context
                             docker context use dind
                             
-                            # Install QEMU/binfmt for multi-arch support
-                            echo "Installing QEMU/binfmt for multi-arch support..."
-                            docker --context dind run --privileged --rm tonistiigi/binfmt --install all || true
-                            
-                            # Setup buildx builder
-                            if ! docker buildx inspect kb-multi-builder >/dev/null 2>&1; then
-                                echo "Creating buildx builder 'kb-multi-builder'..."
+                            # Setup buildx builder for ARM64
+                            if ! docker buildx inspect kb-arm64-builder >/dev/null 2>&1; then
+                                echo "Creating buildx builder 'kb-arm64-builder' for ARM64..."
                                 docker buildx create \
-                                    --name kb-multi-builder \
+                                    --name kb-arm64-builder \
                                     --use \
+                                    --platform ${TARGET_PLATFORM} \
                                     dind
                             else
-                                echo "Using existing buildx builder 'kb-multi-builder'..."
-                                docker buildx use kb-multi-builder
+                                echo "Using existing buildx builder 'kb-arm64-builder'..."
+                                docker buildx use kb-arm64-builder
                             fi
                             
                             # Inspect builder
-                            docker buildx inspect kb-multi-builder
+                            docker buildx inspect kb-arm64-builder
                             
-                            # Build and push multi-arch image
-                            echo "Building and pushing multi-arch image: ${FULL_IMAGE_NAME} and ${LATEST_IMAGE_NAME}"
-                            echo "Platforms: linux/amd64, linux/arm64"
+                            # Build and push ARM64 image
+                            echo "Building and pushing ARM64 image: ${FULL_IMAGE_NAME} and ${LATEST_IMAGE_NAME}"
+                            echo "Platform: ${TARGET_PLATFORM}"
                             
                             docker buildx build \
-                                --platform linux/amd64,linux/arm64 \
+                                --platform ${TARGET_PLATFORM} \
                                 --target production \
                                 --build-arg BUILDKIT_INLINE_CACHE=1 \
                                 --cache-from type=registry,ref="${LATEST_IMAGE_NAME}" \
@@ -236,47 +240,22 @@ pipeline {
                                 --progress=plain \
                                 .
                             
-                            echo "✅ Image built and pushed successfully"
+                            echo "✅ ARM64 image built and pushed successfully"
                             
-                            # Verify multi-arch manifest
-                            echo "🔍 Verifying multi-arch manifest..."
+                            # Verify ARM64 image
+                            echo "🔍 Verifying ARM64 image..."
                             docker buildx imagetools inspect "${FULL_IMAGE_NAME}" || {
-                                echo "❌ Failed to inspect manifest"
+                                echo "❌ Failed to inspect image"
                                 exit 1
                             }
                             
-                            # Show manifest details
-                            echo "📋 Manifest details:"
-                            docker buildx imagetools inspect "${FULL_IMAGE_NAME}" || echo "⚠️ Could not inspect manifest"
-                            
-                            # Verify platforms in manifest using a more robust method
-                            echo "🔍 Verifying platforms in manifest..."
+                            # Verify platform in manifest
                             MANIFEST_OUTPUT=$(docker buildx imagetools inspect "${FULL_IMAGE_NAME}" 2>&1 || echo "")
-                            
-                            # Check for ARM64 platform
                             if echo "${MANIFEST_OUTPUT}" | grep -qiE "linux/arm64|arm64|aarch64"; then
-                                echo "✅ ARM64 platform found in manifest"
+                                echo "✅ ARM64 platform verified in manifest"
                             else
-                                echo "⚠️ ARM64 platform not explicitly found in manifest output"
-                                echo "   This may be normal if manifest uses different format."
-                                echo "   Will verify during deployment instead."
-                            fi
-                            
-                            # Check for AMD64 platform
-                            if echo "${MANIFEST_OUTPUT}" | grep -qiE "linux/amd64|amd64|x86_64"; then
-                                echo "✅ AMD64 platform found in manifest"
-                            else
-                                echo "⚠️ AMD64 platform not explicitly found in manifest output"
-                            fi
-                            
-                            # Alternative verification: try to pull ARM64 image
-                            echo "🔍 Verifying ARM64 image can be pulled..."
-                            if docker pull --platform linux/arm64 "${FULL_IMAGE_NAME}" 2>&1 | grep -qiE "arm64|aarch64|pulled|already exists"; then
-                                echo "✅ ARM64 image verified (can be pulled)"
-                                # Remove the test pull to save space
-                                docker rmi "${FULL_IMAGE_NAME}" 2>/dev/null || true
-                            else
-                                echo "⚠️ Could not verify ARM64 image pull (non-critical, will verify during deployment)"
+                                echo "⚠️ ARM64 platform not found in manifest output"
+                                echo "   Will verify during deployment"
                             fi
                             
                             # Logout
@@ -294,31 +273,42 @@ pipeline {
             }
             steps {
                 script {
-                    echo "🧪 Testing Docker image..."
+                    echo "🧪 Testing ARM64 Docker image..."
                     
+                    // Best Practice: Combine shell commands to reduce overhead
                     sh '''
                         set -euxo pipefail
                         
                         IMAGE_TAG="${FULL_IMAGE_NAME}"
-                        echo "Testing image: ${IMAGE_TAG}"
+                        echo "Testing ARM64 image: ${IMAGE_TAG}"
                         
-                        # Pull image from registry
-                        echo "Pulling image from registry..."
-                        docker pull "${IMAGE_TAG}" || {
-                            echo "❌ Failed to pull image"
+                        # Pull ARM64 image from registry
+                        echo "Pulling ARM64 image from registry..."
+                        docker pull --platform ${TARGET_PLATFORM} "${IMAGE_TAG}" || {
+                            echo "❌ Failed to pull ARM64 image"
                             exit 1
                         }
                         
+                        # Verify image architecture
+                        IMAGE_ARCH=$(docker inspect "${IMAGE_TAG}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+                        echo "📦 Image architecture: ${IMAGE_ARCH}"
+                        
+                        if [ "${IMAGE_ARCH}" != "arm64" ] && [ "${IMAGE_ARCH}" != "aarch64" ]; then
+                            echo "❌ Image is not ARM64 (got ${IMAGE_ARCH})"
+                            exit 1
+                        fi
+                        echo "✅ Image architecture verified: ARM64"
+                        
                         # Test PHP version
                         echo "Testing PHP version..."
-                        docker run --rm -e APP_ENV=testing "${IMAGE_TAG}" php -v || {
+                        docker run --rm --platform ${TARGET_PLATFORM} -e APP_ENV=testing "${IMAGE_TAG}" php -v || {
                             echo "❌ PHP version check failed"
                             exit 1
                         }
                         
                         # Test PHP extensions
                         echo "Testing PHP extensions..."
-                        docker run --rm "${IMAGE_TAG}" php -m > /tmp/phpm.txt || {
+                        docker run --rm --platform ${TARGET_PLATFORM} "${IMAGE_TAG}" php -m > /tmp/phpm.txt || {
                             echo "❌ Failed to list PHP modules"
                             exit 1
                         }
@@ -343,7 +333,10 @@ pipeline {
                         fi
                         
                         echo "✅ All required PHP extensions are present"
-                        echo "✅ Image testing completed successfully"
+                        echo "✅ ARM64 image testing completed successfully"
+                        
+                        # Cleanup test image
+                        docker rmi "${IMAGE_TAG}" 2>/dev/null || true
                     '''
                 }
             }
@@ -422,8 +415,8 @@ pipeline {
                                 "$SSH_USER@${DEPLOY_HOST}" \
                                 "echo '$DOCKER_PASS' | docker login -u '$DOCKER_USER' --password-stdin '$REGISTRY'"
                             
-                            # Execute deployment script on server
-                            echo "Executing deployment script on server..."
+                            # Execute deployment script on server (ARM64 only)
+                            echo "Executing ARM64 deployment script on server..."
                             ssh -i "$SSH_KEY" \
                                 -o StrictHostKeyChecking=no \
                                 -o ConnectTimeout=${SSH_TIMEOUT} \
@@ -431,243 +424,78 @@ pipeline {
                                 "REGISTRY='${REGISTRY}' \
                                  IMAGE_NAME='${IMAGE_NAME}' \
                                  IMAGE_TAG='${IMAGE_TAG}' \
+                                 TARGET_PLATFORM='${TARGET_PLATFORM}' \
                                  DEPLOY_PATH='${DEPLOY_PATH}' \
                                  BACKUP_PATH='${BACKUP_PATH}' \
                                  DB_HEALTH_CHECK_TIMEOUT='${DB_HEALTH_CHECK_TIMEOUT}' \
                                  APP_HEALTH_CHECK_TIMEOUT='${APP_HEALTH_CHECK_TIMEOUT}' \
                                  bash -s" << 'DEPLOY_SCRIPT'
 #!/bin/bash
-set -Eeuo pipefail
+# Best Practice: Use set -euxo pipefail for better error handling
+set -euxo pipefail
 
-echo "📋 Remote Deployment Environment:"
+echo "📋 Remote Deployment Environment (ARM64):"
 echo "  REGISTRY=${REGISTRY}"
 echo "  IMAGE_NAME=${IMAGE_NAME}"
 echo "  IMAGE_TAG=${IMAGE_TAG}"
+echo "  TARGET_PLATFORM=${TARGET_PLATFORM}"
 echo "  DEPLOY_PATH=${DEPLOY_PATH}"
 echo "  BACKUP_PATH=${BACKUP_PATH}"
 
 cd "${DEPLOY_PATH}"
 
 APP_IMAGE="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+PLATFORM="${TARGET_PLATFORM}"
 echo "📦 Using APP_IMAGE=${APP_IMAGE}"
+echo "📱 Target Platform: ${PLATFORM} (ARM64 only)"
 
-# Detect server architecture
+# Verify server architecture is ARM64
 SERVER_ARCH=$(uname -m)
 echo "🖥️  Server architecture: ${SERVER_ARCH}"
 
-# Set platform based on server architecture
-if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
-    PLATFORM="linux/arm64"
-    echo "📱 Detected ARM64 architecture, will pull ARM64 image"
-elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
-    PLATFORM="linux/amd64"
-    echo "💻 Detected AMD64 architecture, will pull AMD64 image"
-else
-    PLATFORM="linux/${SERVER_ARCH}"
-    echo "⚠️  Unknown architecture, will try to pull for ${PLATFORM}"
+if [ "${SERVER_ARCH}" != "aarch64" ] && [ "${SERVER_ARCH}" != "arm64" ]; then
+    echo "❌ ERROR: Server architecture (${SERVER_ARCH}) is not ARM64"
+    echo "   This pipeline is configured for ARM64 only."
+    echo "   Please use a different pipeline for other architectures."
+    exit 1
 fi
+echo "✅ Server architecture verified: ARM64"
 
-# Remove ALL existing images with the same tag first to avoid conflicts
-echo "🧹 Removing all existing images with tag ${APP_IMAGE} to avoid conflicts..."
+# Best Practice: Combine shell commands to reduce overhead
+# Cleanup old images and containers
+echo "🧹 Cleaning up old images and containers..."
 docker images "${APP_IMAGE}" --format "{{.ID}}" | xargs -r docker rmi -f 2>/dev/null || true
-
-# Also remove any containers using the old image
-echo "🧹 Removing any containers using old image..."
 docker ps -a --filter "ancestor=${APP_IMAGE}" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
 
-# Pull latest image with platform specification
-echo "⬇️ Pulling app image for platform ${PLATFORM}..."
+# Pull ARM64 image
+echo "⬇️ Pulling ARM64 image: ${APP_IMAGE}..."
 docker pull --platform "${PLATFORM}" "${APP_IMAGE}" || {
-    echo "❌ Failed to pull ${APP_IMAGE} for platform ${PLATFORM}"
+    echo "❌ Failed to pull ARM64 image"
     echo "   This will cause 'exec format error'. Aborting."
     exit 1
 }
 
-# Verify the pulled image is actually the correct architecture by checking image ID
-echo "🔍 Verifying pulled image architecture..."
-PULLED_IMAGE_ID=$(docker images "${APP_IMAGE}" --format "{{.ID}}" | head -1)
-if [ -z "${PULLED_IMAGE_ID}" ]; then
-    echo "❌ CRITICAL: No image found after pull!"
+# Verify ARM64 image architecture
+echo "🔍 Verifying ARM64 image architecture..."
+IMAGE_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+echo "📦 Image architecture: ${IMAGE_ARCH}"
+
+if [ "${IMAGE_ARCH}" != "arm64" ] && [ "${IMAGE_ARCH}" != "aarch64" ]; then
+    echo "❌ ERROR: Image architecture (${IMAGE_ARCH}) is not ARM64"
+    echo "   This will cause 'exec format error'. Aborting."
     exit 1
 fi
-PULLED_IMAGE_ARCH=$(docker inspect "${PULLED_IMAGE_ID}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-echo "📦 Pulled image ID: ${PULLED_IMAGE_ID}"
-echo "📦 Pulled image architecture: ${PULLED_IMAGE_ARCH}"
+echo "✅ Verified: Image is ARM64"
 
-if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
-    if [ "${PULLED_IMAGE_ARCH}" != "arm64" ] && [ "${PULLED_IMAGE_ARCH}" != "aarch64" ]; then
-        echo "❌ CRITICAL: Pulled image is not ARM64 (got ${PULLED_IMAGE_ARCH})"
-        echo "   Image ID: ${PULLED_IMAGE_ID}"
-        echo "   This will cause 'exec format error'. Aborting."
-        exit 1
-    fi
-    echo "✅ Verified: Pulled image is ARM64"
-elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
-    if [ "${PULLED_IMAGE_ARCH}" != "amd64" ] && [ "${PULLED_IMAGE_ARCH}" != "x86_64" ]; then
-        echo "❌ CRITICAL: Pulled image is not AMD64 (got ${PULLED_IMAGE_ARCH})"
-        echo "   Image ID: ${PULLED_IMAGE_ID}"
-        echo "   This will cause 'exec format error'. Aborting."
-        exit 1
-    fi
-    echo "✅ Verified: Pulled image is AMD64"
-fi
-
-# Verify image architecture (using tag for compatibility)
-echo "🔍 Verifying image architecture (by tag)..."
-IMAGE_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-echo "📦 Image architecture (by tag): ${IMAGE_ARCH}"
-
-# Verify architecture matches server
-if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
-    if [ "${IMAGE_ARCH}" != "arm64" ] && [ "${IMAGE_ARCH}" != "aarch64" ]; then
-        echo "⚠️  WARNING: Server is ARM64 but image architecture is ${IMAGE_ARCH}"
-        echo "   This may cause 'exec format error'. Re-pulling with platform specification..."
-        docker pull --platform linux/arm64 "${APP_IMAGE}" || echo "⚠️ Failed to re-pull ARM64 image"
-        # Re-verify after re-pull
-        IMAGE_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-        echo "📦 Image architecture after re-pull: ${IMAGE_ARCH}"
-    else
-        echo "✅ Image architecture matches server (ARM64)"
-    fi
-    
-    # Remove any AMD64 images with the same tag to avoid confusion
-    echo "🧹 Removing any AMD64 images with same tag to avoid conflicts..."
-    docker images "${APP_IMAGE}" --format "{{.ID}} {{.Repository}}:{{.Tag}} {{.Architecture}}" | \
-        grep -v -E "arm64|aarch64" | \
-        awk '{print $1}' | \
-        xargs -r docker rmi -f 2>/dev/null || true
-    
-    # Set default platform for docker compose
-    export DOCKER_DEFAULT_PLATFORM=linux/arm64
-    echo "🔧 Set DOCKER_DEFAULT_PLATFORM=linux/arm64"
-    
-elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
-    if [ "${IMAGE_ARCH}" != "amd64" ] && [ "${IMAGE_ARCH}" != "x86_64" ]; then
-        echo "⚠️  WARNING: Server is AMD64 but image architecture is ${IMAGE_ARCH}"
-        echo "   Re-pulling with platform specification..."
-        docker pull --platform linux/amd64 "${APP_IMAGE}" || echo "⚠️ Failed to re-pull AMD64 image"
-        # Re-verify after re-pull
-        IMAGE_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-        echo "📦 Image architecture after re-pull: ${IMAGE_ARCH}"
-    else
-        echo "✅ Image architecture matches server (AMD64)"
-    fi
-    
-    # Remove any ARM64 images with the same tag to avoid confusion
-    echo "🧹 Removing any ARM64 images with same tag to avoid conflicts..."
-    docker images "${APP_IMAGE}" --format "{{.ID}} {{.Repository}}:{{.Tag}} {{.Architecture}}" | \
-        grep -v -E "amd64|x86_64" | \
-        awk '{print $1}' | \
-        xargs -r docker rmi -f 2>/dev/null || true
-    
-    # Set default platform for docker compose
-    export DOCKER_DEFAULT_PLATFORM=linux/amd64
-    echo "🔧 Set DOCKER_DEFAULT_PLATFORM=linux/amd64"
-fi
-
-# Final verification before compose pull
-echo "🔍 Final image architecture verification..."
-FINAL_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-echo "📦 Final image architecture: ${FINAL_ARCH}"
-
-if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
-    if [ "${FINAL_ARCH}" != "arm64" ] && [ "${FINAL_ARCH}" != "aarch64" ]; then
-        echo "❌ ERROR: Image architecture (${FINAL_ARCH}) does not match server (ARM64)"
-        echo "   This will cause 'exec format error'. Please check image build."
-        exit 1
-    fi
-elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
-    if [ "${FINAL_ARCH}" != "amd64" ] && [ "${FINAL_ARCH}" != "x86_64" ]; then
-        echo "❌ ERROR: Image architecture (${FINAL_ARCH}) does not match server (AMD64)"
-        echo "   This will cause 'exec format error'. Please check image build."
-        exit 1
-    fi
-fi
-
-# Verify the pulled image architecture one more time
-PULLED_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-echo "📦 Pulled image architecture: ${PULLED_ARCH}"
-
-if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
-    if [ "${PULLED_ARCH}" != "arm64" ] && [ "${PULLED_ARCH}" != "aarch64" ]; then
-        echo "❌ CRITICAL: Pulled image is not ARM64 (got ${PULLED_ARCH})"
-        echo "   This will cause 'exec format error'. Aborting."
-        exit 1
-    fi
-    echo "✅ Verified: Pulled image is ARM64"
-elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
-    if [ "${PULLED_ARCH}" != "amd64" ] && [ "${PULLED_ARCH}" != "x86_64" ]; then
-        echo "❌ CRITICAL: Pulled image is not AMD64 (got ${PULLED_ARCH})"
-        echo "   This will cause 'exec format error'. Aborting."
-        exit 1
-    fi
-    echo "✅ Verified: Pulled image is AMD64"
-fi
-
-# Verify only correct architecture image exists
-echo "🔍 Verifying only correct architecture image exists..."
-REMAINING_IMAGES=$(docker images "${APP_IMAGE}" --format "{{.Architecture}}" | sort -u)
-echo "📦 Remaining image architectures: ${REMAINING_IMAGES}"
-
-# Remove any other images with different architecture (if any)
-echo "🧹 Removing any remaining conflicting images..."
-docker images "${APP_IMAGE}" --format "{{.ID}} {{.Architecture}}" | while read -r IMG_ID IMG_ARCH; do
-    if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
-        if [ "${IMG_ARCH}" != "arm64" ] && [ "${IMG_ARCH}" != "aarch64" ]; then
-            echo "   Removing ${IMG_ARCH} image: ${IMG_ID}"
-            docker rmi -f "${IMG_ID}" 2>/dev/null || true
-        fi
-    elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
-        if [ "${IMG_ARCH}" != "amd64" ] && [ "${IMG_ARCH}" != "x86_64" ]; then
-            echo "   Removing ${IMG_ARCH} image: ${IMG_ID}"
-            docker rmi -f "${IMG_ID}" 2>/dev/null || true
-        fi
-    fi
-done
-
-# Final verification: only correct architecture should exist
-FINAL_IMAGES=$(docker images "${APP_IMAGE}" --format "{{.Architecture}}" | sort -u | tr '\n' ' ')
-echo "📦 Final image architectures: ${FINAL_IMAGES}"
-
-# Before docker compose pull, ensure only correct architecture image exists
-echo "🔍 Final check: ensuring only correct architecture image exists..."
-ALL_IMAGES=$(docker images "${APP_IMAGE}" --format "{{.ID}} {{.Architecture}}")
-echo "📦 All images with tag ${APP_IMAGE}:"
-echo "${ALL_IMAGES}"
-
-# Remove any images with wrong architecture
-echo "${ALL_IMAGES}" | while read -r IMG_ID IMG_ARCH; do
-    if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
-        if [ "${IMG_ARCH}" != "arm64" ] && [ "${IMG_ARCH}" != "aarch64" ]; then
-            echo "   Removing ${IMG_ARCH} image: ${IMG_ID}"
-            docker rmi -f "${IMG_ID}" 2>/dev/null || true
-        fi
-    elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
-        if [ "${IMG_ARCH}" != "amd64" ] && [ "${IMG_ARCH}" != "x86_64" ]; then
-            echo "   Removing ${IMG_ARCH} image: ${IMG_ID}"
-            docker rmi -f "${IMG_ID}" 2>/dev/null || true
-        fi
-    fi
-done
-
-# Verify only correct architecture remains
-REMAINING_IMAGES=$(docker images "${APP_IMAGE}" --format "{{.Architecture}}" | sort -u | tr '\n' ' ')
-echo "📦 Remaining image architectures: ${REMAINING_IMAGES}"
-
-# Pull with docker compose (should use already pulled image)
-echo "⬇️ Pulling images with docker compose..."
+# Set platform for docker compose
 export DOCKER_DEFAULT_PLATFORM="${PLATFORM}"
 echo "🔧 Set DOCKER_DEFAULT_PLATFORM=${PLATFORM}"
 
-# Force docker compose to use the pulled image by specifying platform
+# Pull with docker compose
+echo "⬇️ Pulling images with docker compose..."
 docker compose pull app queue scheduler || echo "⚠️ Some image pulls failed, will use existing images"
 
-# Verify docker compose will use correct image
-echo "🔍 Verifying docker compose will use correct image..."
-COMPOSE_CONFIG_IMAGE=$(docker compose config | grep -A 5 "app:" | grep "image:" | awk '{print $2}' | tr -d '"' || echo "")
-echo "📋 Docker compose config image: ${COMPOSE_CONFIG_IMAGE}"
-
-# Stop existing stack (gracefully)
+# Stop existing stack gracefully
 echo "🛑 Stopping existing stack..."
 docker compose down --timeout 30 || true
 
@@ -693,125 +521,39 @@ if [ "$DB_READY" != "true" ]; then
     exit 1
 fi
 
-# Verify image one more time before starting containers
+# Final verification before starting containers
 echo "🔍 Final verification before starting containers..."
-CONTAINER_IMAGE_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-echo "📦 Container image architecture: ${CONTAINER_IMAGE_ARCH}"
-
-if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
-    if [ "${CONTAINER_IMAGE_ARCH}" != "arm64" ] && [ "${CONTAINER_IMAGE_ARCH}" != "aarch64" ]; then
-        echo "❌ CRITICAL ERROR: Image architecture (${CONTAINER_IMAGE_ARCH}) does not match server (ARM64)"
-        echo "   This will cause 'exec format error'. Aborting deployment."
-        echo "   Please check:"
-        echo "   1. Image was built for ARM64: docker buildx imagetools inspect ${APP_IMAGE}"
-        echo "   2. Image was pulled with --platform linux/arm64"
-        echo "   3. No conflicting images exist: docker images ${APP_IMAGE}"
-        exit 1
-    fi
-    echo "✅ Verified: Image is ARM64, safe to start containers"
-elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
-    if [ "${CONTAINER_IMAGE_ARCH}" != "amd64" ] && [ "${CONTAINER_IMAGE_ARCH}" != "x86_64" ]; then
-        echo "❌ CRITICAL ERROR: Image architecture (${CONTAINER_IMAGE_ARCH}) does not match server (AMD64)"
-        echo "   This will cause 'exec format error'. Aborting deployment."
-        exit 1
-    fi
-    echo "✅ Verified: Image is AMD64, safe to start containers"
+FINAL_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+if [ "${FINAL_ARCH}" != "arm64" ] && [ "${FINAL_ARCH}" != "aarch64" ]; then
+    echo "❌ CRITICAL: Image architecture (${FINAL_ARCH}) is not ARM64"
+    echo "   This will cause 'exec format error'. Aborting."
+    exit 1
 fi
+echo "✅ Verified: Image is ARM64, safe to start containers"
 
-# Verify docker compose will use correct image
-echo "🔍 Verifying docker compose image configuration..."
-COMPOSE_IMAGE=$(docker compose config --services | head -1)
-echo "📋 Docker compose will use image: ${APP_IMAGE}"
-
-# Final verification: ensure image is correct before starting
-echo "🔍 Final verification before starting containers..."
-FINAL_VERIFY_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-echo "📦 Final image architecture: ${FINAL_VERIFY_ARCH}"
-
-if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
-    if [ "${FINAL_VERIFY_ARCH}" != "arm64" ] && [ "${FINAL_VERIFY_ARCH}" != "aarch64" ]; then
-        echo "❌ CRITICAL: Image architecture (${FINAL_VERIFY_ARCH}) does not match server (ARM64)"
-        echo "   This will cause 'exec format error'. Aborting."
-        exit 1
-    fi
-elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
-    if [ "${FINAL_VERIFY_ARCH}" != "amd64" ] && [ "${FINAL_VERIFY_ARCH}" != "x86_64" ]; then
-        echo "❌ CRITICAL: Image architecture (${FINAL_VERIFY_ARCH}) does not match server (AMD64)"
-        echo "   This will cause 'exec format error'. Aborting."
-        exit 1
-    fi
-fi
-
-# Start Redis, App, Queue, and Scheduler with explicit platform
+# Start Redis, App, Queue, and Scheduler
 echo "🚀 Starting Redis, App, Queue, and Scheduler..."
 echo "   Using APP_IMAGE=${APP_IMAGE}"
 echo "   Using DOCKER_DEFAULT_PLATFORM=${PLATFORM}"
-echo "   Image architecture: ${FINAL_VERIFY_ARCH}"
-
-# Ensure DOCKER_DEFAULT_PLATFORM is set
-export DOCKER_DEFAULT_PLATFORM="${PLATFORM}"
-
-# Before starting, verify the image that will be used
-echo "🔍 Verifying image that will be used by docker compose..."
-COMPOSE_IMAGE_CHECK=$(docker compose config --services | head -1)
-echo "📋 Docker compose will start services: app, queue, scheduler"
-
-# Get the actual image ID that will be used
-ACTUAL_IMAGE_ID=$(docker images "${APP_IMAGE}" --format "{{.ID}}" | head -1)
-ACTUAL_IMAGE_ARCH=$(docker inspect "${ACTUAL_IMAGE_ID}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-echo "📦 Actual image ID that will be used: ${ACTUAL_IMAGE_ID}"
-echo "📦 Actual image architecture: ${ACTUAL_IMAGE_ARCH}"
-
-if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
-    if [ "${ACTUAL_IMAGE_ARCH}" != "arm64" ] && [ "${ACTUAL_IMAGE_ARCH}" != "aarch64" ]; then
-        echo "❌ CRITICAL: Image that will be used is not ARM64 (got ${ACTUAL_IMAGE_ARCH})"
-        echo "   Image ID: ${ACTUAL_IMAGE_ID}"
-        echo "   This will cause 'exec format error'. Aborting."
-        exit 1
-    fi
-    echo "✅ Verified: Image that will be used is ARM64"
-elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
-    if [ "${ACTUAL_IMAGE_ARCH}" != "amd64" ] && [ "${ACTUAL_IMAGE_ARCH}" != "x86_64" ]; then
-        echo "❌ CRITICAL: Image that will be used is not AMD64 (got ${ACTUAL_IMAGE_ARCH})"
-        echo "   Image ID: ${ACTUAL_IMAGE_ID}"
-        echo "   This will cause 'exec format error'. Aborting."
-        exit 1
-    fi
-    echo "✅ Verified: Image that will be used is AMD64"
-fi
-
-# Start containers with explicit image and platform
-echo "🚀 Starting containers with image ID: ${ACTUAL_IMAGE_ID} (${ACTUAL_IMAGE_ARCH})"
 APP_IMAGE="${APP_IMAGE}" docker compose up -d redis app queue scheduler
 
-# Verify containers started with correct architecture
+# Verify containers started with ARM64 architecture
 echo "🔍 Verifying container architectures..."
 for service in app queue scheduler; do
     CONTAINER_ID=$(docker compose ps -q "${service}" 2>/dev/null || echo "")
     if [ -n "${CONTAINER_ID}" ]; then
-        # Get image ID used by container
         CONTAINER_IMAGE_ID=$(docker inspect "${CONTAINER_ID}" --format='{{.Image}}' 2>/dev/null || echo "")
         if [ -n "${CONTAINER_IMAGE_ID}" ]; then
-            # Get architecture of the actual image used by container
             CONTAINER_ARCH=$(docker inspect "${CONTAINER_IMAGE_ID}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
             echo "   ${service}: ${CONTAINER_ARCH} (image ID: ${CONTAINER_IMAGE_ID:0:12})"
             
-            if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
-                if [ "${CONTAINER_ARCH}" != "arm64" ] && [ "${CONTAINER_ARCH}" != "aarch64" ]; then
-                    echo "   ❌ ERROR: ${service} container is using ${CONTAINER_ARCH} image, not ARM64!"
-                    echo "      This will cause 'exec format error'."
-                    echo "      Container image ID: ${CONTAINER_IMAGE_ID}"
-                    echo "      Expected image: ${APP_IMAGE}"
-                    echo "      Please check if image was pulled correctly."
-                else
-                    echo "   ✅ ${service} container is using ARM64 image"
-                fi
+            if [ "${CONTAINER_ARCH}" != "arm64" ] && [ "${CONTAINER_ARCH}" != "aarch64" ]; then
+                echo "   ❌ ERROR: ${service} container is using ${CONTAINER_ARCH} image, not ARM64!"
+                echo "      This will cause 'exec format error'."
+            else
+                echo "   ✅ ${service} container is using ARM64 image"
             fi
-        else
-            echo "   ⚠️  Could not get image ID for ${service} container"
         fi
-    else
-        echo "   ⚠️  ${service} container not found"
     fi
 done
 
