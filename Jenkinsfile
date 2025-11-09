@@ -471,6 +471,10 @@ fi
 echo "🧹 Removing all existing images with tag ${APP_IMAGE} to avoid conflicts..."
 docker images "${APP_IMAGE}" --format "{{.ID}}" | xargs -r docker rmi -f 2>/dev/null || true
 
+# Also remove any containers using the old image
+echo "🧹 Removing any containers using old image..."
+docker ps -a --filter "ancestor=${APP_IMAGE}" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
+
 # Pull latest image with platform specification
 echo "⬇️ Pulling app image for platform ${PLATFORM}..."
 docker pull --platform "${PLATFORM}" "${APP_IMAGE}" || {
@@ -479,10 +483,39 @@ docker pull --platform "${PLATFORM}" "${APP_IMAGE}" || {
     exit 1
 }
 
-# Verify image architecture
-echo "🔍 Verifying image architecture..."
+# Verify the pulled image is actually the correct architecture by checking image ID
+echo "🔍 Verifying pulled image architecture..."
+PULLED_IMAGE_ID=$(docker images "${APP_IMAGE}" --format "{{.ID}}" | head -1)
+if [ -z "${PULLED_IMAGE_ID}" ]; then
+    echo "❌ CRITICAL: No image found after pull!"
+    exit 1
+fi
+PULLED_IMAGE_ARCH=$(docker inspect "${PULLED_IMAGE_ID}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+echo "📦 Pulled image ID: ${PULLED_IMAGE_ID}"
+echo "📦 Pulled image architecture: ${PULLED_IMAGE_ARCH}"
+
+if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
+    if [ "${PULLED_IMAGE_ARCH}" != "arm64" ] && [ "${PULLED_IMAGE_ARCH}" != "aarch64" ]; then
+        echo "❌ CRITICAL: Pulled image is not ARM64 (got ${PULLED_IMAGE_ARCH})"
+        echo "   Image ID: ${PULLED_IMAGE_ID}"
+        echo "   This will cause 'exec format error'. Aborting."
+        exit 1
+    fi
+    echo "✅ Verified: Pulled image is ARM64"
+elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
+    if [ "${PULLED_IMAGE_ARCH}" != "amd64" ] && [ "${PULLED_IMAGE_ARCH}" != "x86_64" ]; then
+        echo "❌ CRITICAL: Pulled image is not AMD64 (got ${PULLED_IMAGE_ARCH})"
+        echo "   Image ID: ${PULLED_IMAGE_ID}"
+        echo "   This will cause 'exec format error'. Aborting."
+        exit 1
+    fi
+    echo "✅ Verified: Pulled image is AMD64"
+fi
+
+# Verify image architecture (using tag for compatibility)
+echo "🔍 Verifying image architecture (by tag)..."
 IMAGE_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-echo "📦 Image architecture: ${IMAGE_ARCH}"
+echo "📦 Image architecture (by tag): ${IMAGE_ARCH}"
 
 # Verify architecture matches server
 if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
@@ -596,11 +629,43 @@ done
 FINAL_IMAGES=$(docker images "${APP_IMAGE}" --format "{{.Architecture}}" | sort -u | tr '\n' ' ')
 echo "📦 Final image architectures: ${FINAL_IMAGES}"
 
+# Before docker compose pull, ensure only correct architecture image exists
+echo "🔍 Final check: ensuring only correct architecture image exists..."
+ALL_IMAGES=$(docker images "${APP_IMAGE}" --format "{{.ID}} {{.Architecture}}")
+echo "📦 All images with tag ${APP_IMAGE}:"
+echo "${ALL_IMAGES}"
+
+# Remove any images with wrong architecture
+echo "${ALL_IMAGES}" | while read -r IMG_ID IMG_ARCH; do
+    if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
+        if [ "${IMG_ARCH}" != "arm64" ] && [ "${IMG_ARCH}" != "aarch64" ]; then
+            echo "   Removing ${IMG_ARCH} image: ${IMG_ID}"
+            docker rmi -f "${IMG_ID}" 2>/dev/null || true
+        fi
+    elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
+        if [ "${IMG_ARCH}" != "amd64" ] && [ "${IMG_ARCH}" != "x86_64" ]; then
+            echo "   Removing ${IMG_ARCH} image: ${IMG_ID}"
+            docker rmi -f "${IMG_ID}" 2>/dev/null || true
+        fi
+    fi
+done
+
+# Verify only correct architecture remains
+REMAINING_IMAGES=$(docker images "${APP_IMAGE}" --format "{{.Architecture}}" | sort -u | tr '\n' ' ')
+echo "📦 Remaining image architectures: ${REMAINING_IMAGES}"
+
 # Pull with docker compose (should use already pulled image)
 echo "⬇️ Pulling images with docker compose..."
 export DOCKER_DEFAULT_PLATFORM="${PLATFORM}"
 echo "🔧 Set DOCKER_DEFAULT_PLATFORM=${PLATFORM}"
+
+# Force docker compose to use the pulled image by specifying platform
 docker compose pull app queue scheduler || echo "⚠️ Some image pulls failed, will use existing images"
+
+# Verify docker compose will use correct image
+echo "🔍 Verifying docker compose will use correct image..."
+COMPOSE_CONFIG_IMAGE=$(docker compose config | grep -A 5 "app:" | grep "image:" | awk '{print $2}' | tr -d '"' || echo "")
+echo "📋 Docker compose config image: ${COMPOSE_CONFIG_IMAGE}"
 
 # Stop existing stack (gracefully)
 echo "🛑 Stopping existing stack..."
@@ -686,7 +751,37 @@ echo "   Image architecture: ${FINAL_VERIFY_ARCH}"
 # Ensure DOCKER_DEFAULT_PLATFORM is set
 export DOCKER_DEFAULT_PLATFORM="${PLATFORM}"
 
+# Before starting, verify the image that will be used
+echo "🔍 Verifying image that will be used by docker compose..."
+COMPOSE_IMAGE_CHECK=$(docker compose config --services | head -1)
+echo "📋 Docker compose will start services: app, queue, scheduler"
+
+# Get the actual image ID that will be used
+ACTUAL_IMAGE_ID=$(docker images "${APP_IMAGE}" --format "{{.ID}}" | head -1)
+ACTUAL_IMAGE_ARCH=$(docker inspect "${ACTUAL_IMAGE_ID}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+echo "📦 Actual image ID that will be used: ${ACTUAL_IMAGE_ID}"
+echo "📦 Actual image architecture: ${ACTUAL_IMAGE_ARCH}"
+
+if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
+    if [ "${ACTUAL_IMAGE_ARCH}" != "arm64" ] && [ "${ACTUAL_IMAGE_ARCH}" != "aarch64" ]; then
+        echo "❌ CRITICAL: Image that will be used is not ARM64 (got ${ACTUAL_IMAGE_ARCH})"
+        echo "   Image ID: ${ACTUAL_IMAGE_ID}"
+        echo "   This will cause 'exec format error'. Aborting."
+        exit 1
+    fi
+    echo "✅ Verified: Image that will be used is ARM64"
+elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
+    if [ "${ACTUAL_IMAGE_ARCH}" != "amd64" ] && [ "${ACTUAL_IMAGE_ARCH}" != "x86_64" ]; then
+        echo "❌ CRITICAL: Image that will be used is not AMD64 (got ${ACTUAL_IMAGE_ARCH})"
+        echo "   Image ID: ${ACTUAL_IMAGE_ID}"
+        echo "   This will cause 'exec format error'. Aborting."
+        exit 1
+    fi
+    echo "✅ Verified: Image that will be used is AMD64"
+fi
+
 # Start containers with explicit image and platform
+echo "🚀 Starting containers with image ID: ${ACTUAL_IMAGE_ID} (${ACTUAL_IMAGE_ARCH})"
 APP_IMAGE="${APP_IMAGE}" docker compose up -d redis app queue scheduler
 
 # Verify containers started with correct architecture
@@ -694,14 +789,29 @@ echo "🔍 Verifying container architectures..."
 for service in app queue scheduler; do
     CONTAINER_ID=$(docker compose ps -q "${service}" 2>/dev/null || echo "")
     if [ -n "${CONTAINER_ID}" ]; then
-        CONTAINER_ARCH=$(docker inspect "${CONTAINER_ID}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-        echo "   ${service}: ${CONTAINER_ARCH}"
-        
-        if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
-            if [ "${CONTAINER_ARCH}" != "arm64" ] && [ "${CONTAINER_ARCH}" != "aarch64" ]; then
-                echo "   ⚠️  WARNING: ${service} container is not ARM64 (got ${CONTAINER_ARCH})"
+        # Get image ID used by container
+        CONTAINER_IMAGE_ID=$(docker inspect "${CONTAINER_ID}" --format='{{.Image}}' 2>/dev/null || echo "")
+        if [ -n "${CONTAINER_IMAGE_ID}" ]; then
+            # Get architecture of the actual image used by container
+            CONTAINER_ARCH=$(docker inspect "${CONTAINER_IMAGE_ID}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+            echo "   ${service}: ${CONTAINER_ARCH} (image ID: ${CONTAINER_IMAGE_ID:0:12})"
+            
+            if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
+                if [ "${CONTAINER_ARCH}" != "arm64" ] && [ "${CONTAINER_ARCH}" != "aarch64" ]; then
+                    echo "   ❌ ERROR: ${service} container is using ${CONTAINER_ARCH} image, not ARM64!"
+                    echo "      This will cause 'exec format error'."
+                    echo "      Container image ID: ${CONTAINER_IMAGE_ID}"
+                    echo "      Expected image: ${APP_IMAGE}"
+                    echo "      Please check if image was pulled correctly."
+                else
+                    echo "   ✅ ${service} container is using ARM64 image"
+                fi
             fi
+        else
+            echo "   ⚠️  Could not get image ID for ${service} container"
         fi
+    else
+        echo "   ⚠️  ${service} container not found"
     fi
 done
 
