@@ -64,8 +64,8 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends "${buildDeps[@]}" "${runtimeDeps[@]}"; \
     docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
     docker-php-ext-install -j"$(nproc)" gd intl bcmath gmp exif pdo_mysql zip; \
-    pecl install imagick; \
-    docker-php-ext-enable imagick; \
+    pecl install imagick redis; \
+    docker-php-ext-enable imagick redis; \
     apt-get purge -y --auto-remove autoconf dpkg-dev file g++ gcc libc-dev make pkg-config re2c libmagickwand-dev; \
     rm -rf /var/lib/apt/lists/*
 
@@ -86,9 +86,12 @@ COPY docker/php.ini /usr/local/etc/php/conf.d/zz-app.ini
 # Apache: serve /public on 8080
 RUN a2enmod rewrite headers expires remoteip
 COPY docker/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
-RUN sed -i 's#/var/www/html#/var/www/html/public#g' /etc/apache2/sites-available/000-default.conf \
-  && sed -i 's/Listen 80/Listen 8080/g' /etc/apache2/ports.conf \
-  && echo "ServerName localhost" >> /etc/apache2/apache2.conf
+RUN sed -i 's/Listen 80/Listen 8080/g' /etc/apache2/ports.conf \
+  && echo "ServerName localhost" >> /etc/apache2/apache2.conf \
+  && a2ensite 000-default \
+  && mkdir -p /var/log/apache2 \
+  && chown -R www-data:www-data /var/log/apache2 \
+  && chmod -R 755 /var/log/apache2
 
 WORKDIR /var/www/html
 
