@@ -1,6 +1,7 @@
 services:
   app:
     image: ${APP_IMAGE:-docker.io/aessaputra/kangbeef-store:latest}
+    platform: linux/arm64
     container_name: store-app
     env_file: .env
     environment:
@@ -36,6 +37,7 @@ services:
 
   db:
     image: mysql:8.0
+    platform: linux/arm64
     container_name: store-db
     command: >
       --default-authentication-plugin=mysql_native_password
@@ -64,6 +66,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    platform: linux/arm64
     container_name: store-redis
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
@@ -83,6 +86,7 @@ services:
   # Queue Worker Service
   queue:
     image: ${APP_IMAGE:-docker.io/aessaputra/kangbeef-store:latest}
+    platform: linux/arm64
     container_name: store-queue
     env_file: .env
     environment:
@@ -118,6 +122,7 @@ services:
   # Laravel Scheduler Service
   scheduler:
     image: ${APP_IMAGE:-docker.io/aessaputra/kangbeef-store:latest}
+    platform: linux/arm64
     container_name: store-scheduler
     env_file: .env
     environment:

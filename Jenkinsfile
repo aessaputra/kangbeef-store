@@ -1,6 +1,11 @@
 /**
  * Jenkins Pipeline untuk Kangbeef Store - ARM64 Architecture
  * 
+ * Cross-Platform Build Support:
+ * - Jenkins Server: AMD64 (build machine)
+ * - Deployment Server: ARM64 (target machine)
+ * - Build Method: Docker Buildx dengan QEMU emulation
+ * 
  * Best Practices Applied (berdasarkan Jenkins Documentation):
  * - Declarative Pipeline syntax untuk maintainability
  * - Parameterized builds untuk flexibility
@@ -12,9 +17,13 @@
  * - Proper credential management dengan withCredentials
  * - Health checks dan validation sebelum deployment
  * - Cleanup di post section untuk resource management
- * - ARM64-only build untuk konsistensi dan performa
+ * - Cross-platform build (AMD64 -> ARM64) dengan QEMU emulation
  * 
- * Architecture: linux/arm64 (ARM64 only)
+ * Architecture:
+ * - Build Platform: linux/amd64 (Jenkins server)
+ * - Target Platform: linux/arm64 (deployment server)
+ * 
+ * Note: Build time mungkin lebih lama karena emulasi ARM64 pada AMD64
  */
 
 pipeline {
@@ -209,25 +218,53 @@ pipeline {
                             # Use DinD context
                             docker context use dind
                             
-                            # Setup buildx builder for ARM64
+                            # Install QEMU/binfmt for cross-platform emulation (AMD64 -> ARM64)
+                            # This allows building ARM64 images on AMD64 Jenkins server
+                            echo "🔧 Installing QEMU/binfmt for ARM64 emulation..."
+                            docker --context dind run --rm --privileged tonistiigi/binfmt --install linux/arm64 || {
+                                echo "⚠️ QEMU/binfmt installation failed (may already be installed)"
+                            }
+                            
+                            # Setup buildx builder for cross-platform (AMD64 -> ARM64)
+                            # Driver: docker-container supports cross-platform builds
                             if ! docker buildx inspect kb-arm64-builder >/dev/null 2>&1; then
-                                echo "Creating buildx builder 'kb-arm64-builder' for ARM64..."
+                                echo "Creating buildx builder 'kb-arm64-builder' for cross-platform build..."
+                                echo "  Build platform: AMD64 (Jenkins server)"
+                                echo "  Target platform: ARM64 (deployment server)"
                                 docker buildx create \
                                     --name kb-arm64-builder \
+                                    --driver docker-container \
                                     --use \
-                                    --platform ${TARGET_PLATFORM} \
-                                    dind
+                                    --platform linux/amd64,linux/arm64 \
+                                    dind || {
+                                    echo "⚠️ Failed to create builder with docker-container driver, trying default..."
+                                    docker buildx create \
+                                        --name kb-arm64-builder \
+                                        --use \
+                                        --platform linux/amd64,linux/arm64 \
+                                        dind
+                                }
                             else
                                 echo "Using existing buildx builder 'kb-arm64-builder'..."
                                 docker buildx use kb-arm64-builder
                             fi
                             
-                            # Inspect builder
+                            # Inspect builder to verify cross-platform support
+                            echo "🔍 Inspecting buildx builder capabilities..."
                             docker buildx inspect kb-arm64-builder
                             
-                            # Build and push ARM64 image
-                            echo "Building and pushing ARM64 image: ${FULL_IMAGE_NAME} and ${LATEST_IMAGE_NAME}"
-                            echo "Platform: ${TARGET_PLATFORM}"
+                            # Verify builder supports ARM64
+                            BUILDER_PLATFORMS=$(docker buildx inspect kb-arm64-builder --bootstrap 2>&1 | grep -i "platforms:" || echo "")
+                            echo "📋 Builder platforms: ${BUILDER_PLATFORMS}"
+                            
+                            # Build and push ARM64 image from AMD64 Jenkins server
+                            echo "🏗️ Building ARM64 image on AMD64 Jenkins server..."
+                            echo "  Build platform: AMD64 (Jenkins server)"
+                            echo "  Target platform: ${TARGET_PLATFORM} (deployment server)"
+                            echo "  Image: ${FULL_IMAGE_NAME} and ${LATEST_IMAGE_NAME}"
+                            echo ""
+                            echo "ℹ️  Note: Cross-platform build menggunakan QEMU emulation"
+                            echo "   Build time mungkin lebih lama karena emulasi ARM64"
                             
                             docker buildx build \
                                 --platform ${TARGET_PLATFORM} \
@@ -238,6 +275,7 @@ pipeline {
                                 --tag "${FULL_IMAGE_NAME}" \
                                 --tag "${LATEST_IMAGE_NAME}" \
                                 --progress=plain \
+                                --load=false \
                                 .
                             
                             echo "✅ ARM64 image built and pushed successfully"

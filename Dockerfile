@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
 # -------- Stage 1: Composer dependencies --------
-FROM --platform=$BUILDPLATFORM php:8.3-cli AS vendor_stage
+# Note: Platform akan di-handle oleh buildx dengan --platform flag saat build
+FROM php:8.3-cli AS vendor_stage
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -33,7 +34,8 @@ COPY . .
 RUN composer run-script post-autoload-dump && composer dump-autoload --optimize --classmap-authoritative
 
 # -------- Stage 2: Frontend (Vite) --------
-FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend_stage
+# Note: Platform akan di-handle oleh buildx dengan --platform flag saat build
+FROM node:20-alpine AS frontend_stage
 
 WORKDIR /app
 ENV NODE_OPTIONS=--max-old-space-size=2048
@@ -45,7 +47,9 @@ COPY . .
 RUN npm run build
 
 # -------- Stage 3: Runtime Apache + PHP 8.3 --------
-FROM --platform=$BUILDPLATFORM php:8.3-apache AS production
+# Note: Platform akan di-handle oleh buildx dengan --platform flag saat build
+# Base images (php:8.3-apache, php:8.3-cli, node:20-alpine) sudah support ARM64
+FROM php:8.3-apache AS production
 
 ARG PHPIZE_DEPS="autoconf dpkg-dev file g++ gcc libc-dev make pkg-config re2c"
 
