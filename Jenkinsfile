@@ -467,11 +467,16 @@ else
     echo "⚠️  Unknown architecture, will try to pull for ${PLATFORM}"
 fi
 
+# Remove ALL existing images with the same tag first to avoid conflicts
+echo "🧹 Removing all existing images with tag ${APP_IMAGE} to avoid conflicts..."
+docker images "${APP_IMAGE}" --format "{{.ID}}" | xargs -r docker rmi -f 2>/dev/null || true
+
 # Pull latest image with platform specification
 echo "⬇️ Pulling app image for platform ${PLATFORM}..."
 docker pull --platform "${PLATFORM}" "${APP_IMAGE}" || {
-    echo "⚠️ Failed to pull ${APP_IMAGE} for ${PLATFORM}, trying without platform..."
-    docker pull "${APP_IMAGE}" || echo "⚠️ Image pull failed, will use existing image"
+    echo "❌ Failed to pull ${APP_IMAGE} for platform ${PLATFORM}"
+    echo "   This will cause 'exec format error'. Aborting."
+    exit 1
 }
 
 # Verify image architecture
@@ -546,14 +551,6 @@ elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
     fi
 fi
 
-# Pull image for compose with platform specification
-echo "⬇️ Pulling images for docker compose with platform ${PLATFORM}..."
-# Force pull with platform to ensure correct architecture
-docker pull --platform "${PLATFORM}" "${APP_IMAGE}" || {
-    echo "❌ Failed to pull ${APP_IMAGE} with platform ${PLATFORM}"
-    exit 1
-}
-
 # Verify the pulled image architecture one more time
 PULLED_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
 echo "📦 Pulled image architecture: ${PULLED_ARCH}"
@@ -564,20 +561,24 @@ if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
         echo "   This will cause 'exec format error'. Aborting."
         exit 1
     fi
+    echo "✅ Verified: Pulled image is ARM64"
 elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
     if [ "${PULLED_ARCH}" != "amd64" ] && [ "${PULLED_ARCH}" != "x86_64" ]; then
         echo "❌ CRITICAL: Pulled image is not AMD64 (got ${PULLED_ARCH})"
         echo "   This will cause 'exec format error'. Aborting."
         exit 1
     fi
+    echo "✅ Verified: Pulled image is AMD64"
 fi
 
-# Remove ALL other images with the same tag but different architecture
-echo "🧹 Removing any conflicting images with same tag..."
-docker images "${APP_IMAGE}" --format "{{.ID}} {{.Repository}}:{{.Tag}} {{.Architecture}}" | while read -r line; do
-    IMG_ID=$(echo "$line" | awk '{print $1}')
-    IMG_ARCH=$(echo "$line" | awk '{print $3}')
-    
+# Verify only correct architecture image exists
+echo "🔍 Verifying only correct architecture image exists..."
+REMAINING_IMAGES=$(docker images "${APP_IMAGE}" --format "{{.Architecture}}" | sort -u)
+echo "📦 Remaining image architectures: ${REMAINING_IMAGES}"
+
+# Remove any other images with different architecture (if any)
+echo "🧹 Removing any remaining conflicting images..."
+docker images "${APP_IMAGE}" --format "{{.ID}} {{.Architecture}}" | while read -r IMG_ID IMG_ARCH; do
     if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
         if [ "${IMG_ARCH}" != "arm64" ] && [ "${IMG_ARCH}" != "aarch64" ]; then
             echo "   Removing ${IMG_ARCH} image: ${IMG_ID}"
@@ -591,14 +592,15 @@ docker images "${APP_IMAGE}" --format "{{.ID}} {{.Repository}}:{{.Tag}} {{.Archi
     fi
 done
 
-# Verify only correct architecture image exists
-echo "🔍 Verifying only correct architecture image exists..."
-REMAINING_IMAGES=$(docker images "${APP_IMAGE}" --format "{{.Architecture}}" | sort -u)
-echo "📦 Remaining image architectures: ${REMAINING_IMAGES}"
+# Final verification: only correct architecture should exist
+FINAL_IMAGES=$(docker images "${APP_IMAGE}" --format "{{.Architecture}}" | sort -u | tr '\n' ' ')
+echo "📦 Final image architectures: ${FINAL_IMAGES}"
 
 # Pull with docker compose (should use already pulled image)
 echo "⬇️ Pulling images with docker compose..."
-DOCKER_DEFAULT_PLATFORM="${PLATFORM}" docker compose pull app queue scheduler || echo "⚠️ Some image pulls failed, will use existing images"
+export DOCKER_DEFAULT_PLATFORM="${PLATFORM}"
+echo "🔧 Set DOCKER_DEFAULT_PLATFORM=${PLATFORM}"
+docker compose pull app queue scheduler || echo "⚠️ Some image pulls failed, will use existing images"
 
 # Stop existing stack (gracefully)
 echo "🛑 Stopping existing stack..."
@@ -656,11 +658,36 @@ echo "🔍 Verifying docker compose image configuration..."
 COMPOSE_IMAGE=$(docker compose config --services | head -1)
 echo "📋 Docker compose will use image: ${APP_IMAGE}"
 
+# Final verification: ensure image is correct before starting
+echo "🔍 Final verification before starting containers..."
+FINAL_VERIFY_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+echo "📦 Final image architecture: ${FINAL_VERIFY_ARCH}"
+
+if [ "${SERVER_ARCH}" = "aarch64" ] || [ "${SERVER_ARCH}" = "arm64" ]; then
+    if [ "${FINAL_VERIFY_ARCH}" != "arm64" ] && [ "${FINAL_VERIFY_ARCH}" != "aarch64" ]; then
+        echo "❌ CRITICAL: Image architecture (${FINAL_VERIFY_ARCH}) does not match server (ARM64)"
+        echo "   This will cause 'exec format error'. Aborting."
+        exit 1
+    fi
+elif [ "${SERVER_ARCH}" = "x86_64" ] || [ "${SERVER_ARCH}" = "amd64" ]; then
+    if [ "${FINAL_VERIFY_ARCH}" != "amd64" ] && [ "${FINAL_VERIFY_ARCH}" != "x86_64" ]; then
+        echo "❌ CRITICAL: Image architecture (${FINAL_VERIFY_ARCH}) does not match server (AMD64)"
+        echo "   This will cause 'exec format error'. Aborting."
+        exit 1
+    fi
+fi
+
 # Start Redis, App, Queue, and Scheduler with explicit platform
 echo "🚀 Starting Redis, App, Queue, and Scheduler..."
 echo "   Using APP_IMAGE=${APP_IMAGE}"
 echo "   Using DOCKER_DEFAULT_PLATFORM=${PLATFORM}"
-APP_IMAGE="${APP_IMAGE}" DOCKER_DEFAULT_PLATFORM="${PLATFORM}" docker compose up -d redis app queue scheduler
+echo "   Image architecture: ${FINAL_VERIFY_ARCH}"
+
+# Ensure DOCKER_DEFAULT_PLATFORM is set
+export DOCKER_DEFAULT_PLATFORM="${PLATFORM}"
+
+# Start containers with explicit image and platform
+APP_IMAGE="${APP_IMAGE}" docker compose up -d redis app queue scheduler
 
 # Verify containers started with correct architecture
 echo "🔍 Verifying container architectures..."
