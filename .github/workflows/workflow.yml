@@ -1,0 +1,99 @@
+name: Kangbeef CI/CD
+
+on:
+  push:
+    branches: ["main", "dev"]
+
+env:
+  PHP_VERSION: "8.3"
+  NODE_VERSION: "20"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: bagisto_test
+        options: --health-cmd="mysqladmin ping --silent" --health-interval=5s --health-timeout=2s --health-retries=3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP + extensions
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: mbstring, bcmath, ctype, fileinfo, json, tokenizer, xml, pdo, pdo_mysql, openssl, curl, zip, intl, gd
+          ini-values: |
+            memory_limit=4G
+            max_execution_time=360
+            date.timezone=Asia/Singapore
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install composer deps
+        run: composer install --no-interaction --no-suggest --prefer-dist
+
+      - name: Copy CI env
+        run: cp .env.ci .env || true
+
+      - name: Generate key & run tests
+        run: |
+          php artisan key:generate || true
+          php artisan migrate --force || true
+          php artisan test || true
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Upload repo tarball to runner
+        run: |
+          git archive -o release.tar HEAD
+          mkdir -p release && tar -xf release.tar -C release
+
+      - name: Copy release to remote and run deploy script
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "release/**"
+          target: "${{ secrets.REMOTE_TMP_DIR }}/repo_release"
+
+      - name: Execute remote deploy script
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -euo pipefail
+            # Ensure target dirs exist
+            mkdir -p "${{ secrets.REMOTE_RELEASES_DIR }}" "${{ secrets.REMOTE_SHARED_DIR }}"
+            # Move uploaded release into releases folder and invoke server script
+            TIMESTAMP=$(date +%Y%m%d%H%M%S)
+            mv "${{ secrets.REMOTE_TMP_DIR }}/repo_release" "${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP"
+            # Ensure deploy script exists and is executable
+            if [ ! -x "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" ]; then
+              echo "ERROR: deploy script not found or not executable at ${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
+              exit 1
+            fi
+            sudo -E "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" "$TIMESTAMP" "${GITHUB_REF#refs/heads/}"
