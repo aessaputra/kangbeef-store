@@ -28,8 +28,431 @@
  * 
  * Note: Build time mungkin lebih lama karena emulasi ARM64 pada AMD64
  */
-
-pipeline {
+ 
+ // Helper functions - defined before pipeline block
+ def validateParameters() {
+     if (params.DEPLOY_ENV == 'production' && env.BRANCH_NAME != 'main' && !params.FORCE_DEPLOY) {
+         error("Production deployment hanya diizinkan dari branch main. Gunakan FORCE_DEPLOY untuk override.")
+     }
+     
+     if (params.IMAGE_TAG_SUFFIX && !params.IMAGE_TAG_SUFFIX.matches(/^-[a-zA-Z0-9._-]+$/)) {
+         error("IMAGE_TAG_SUFFIX harus dimulai dengan '-' dan hanya mengandung alphanumeric, dot, underscore, atau dash.")
+     }
+ }
+ 
+ def setupBuildxBuilder() {
+     return '''
+         # Setup Docker context for DinD
+         if ! docker context inspect ${DOCKER_CONTEXT} >/dev/null 2>&1; then
+             echo "Creating Docker context '${DOCKER_CONTEXT}'..."
+             docker context create ${DOCKER_CONTEXT} \\
+                 --docker "host=tcp://docker:2376,ca=/certs/client/ca.pem,cert=/certs/client/cert.pem,key=/certs/client/key.pem"
+         fi
+         
+         # Use DinD context
+         docker context use ${DOCKER_CONTEXT}
+         
+         # Install QEMU/binfmt for cross-platform emulation
+         echo "🔧 Installing QEMU/binfmt for ARM64 emulation..."
+         docker --context ${DOCKER_CONTEXT} run --rm --privileged tonistiigi/binfmt --install linux/arm64 || {
+             echo "⚠️ QEMU/binfmt installation failed (may already be installed)"
+         }
+         
+         # Setup buildx builder for cross-platform
+         if ! docker buildx inspect ${BUILDER_NAME} >/dev/null 2>&1; then
+             echo "Creating buildx builder '${BUILDER_NAME}' for cross-platform build..."
+             docker buildx create \\
+                 --name ${BUILDER_NAME} \\
+                 --driver docker-container \\
+                 --use \\
+                 --platform linux/amd64,linux/arm64 \\
+                 ${DOCKER_CONTEXT} || {
+                 echo "⚠️ Failed to create builder with docker-container driver, trying default..."
+                 docker buildx create \\
+                     --name ${BUILDER_NAME} \\
+                     --use \\
+                     --platform linux/amd64,linux/arm64 \\
+                     ${DOCKER_CONTEXT}
+             }
+         else
+             echo "Using existing buildx builder '${BUILDER_NAME}'..."
+             docker buildx use ${BUILDER_NAME}
+         fi
+         
+         # Inspect builder to verify cross-platform support
+         echo "🔍 Inspecting buildx builder capabilities..."
+         docker buildx inspect ${BUILDER_NAME}
+     '''
+ }
+ 
+ def buildDockerImage() {
+     return '''
+         # Start keepalive background process
+         (
+             while true; do
+                 sleep 30
+                 echo "💓 [KEEPALIVE] Build still running... $(date '+%Y-%m-%d %H:%M:%S')"
+             done
+         ) &
+         KEEPALIVE_PID=$!
+         
+         # Function to cleanup keepalive on exit
+         cleanup_keepalive() {
+             if [ -n "${KEEPALIVE_PID}" ]; then
+                 kill "${KEEPALIVE_PID}" 2>/dev/null || true
+                 wait "${KEEPALIVE_PID}" 2>/dev/null || true
+             fi
+         }
+         trap cleanup_keepalive EXIT INT TERM
+         
+         echo "✅ Keepalive process started (PID: ${KEEPALIVE_PID})"
+         
+         # Build with timeout protection
+         if command -v timeout >/dev/null 2>&1; then
+             echo "✅ Using timeout command for build protection"
+             timeout 72000 docker buildx build \\
+                 --platform ${TARGET_PLATFORM} \\
+                 --target production \\
+                 --build-arg BUILDKIT_INLINE_CACHE=1 \\
+                 --cache-from type=registry,ref="${LATEST_IMAGE_NAME}" \\
+                 --push \\
+                 --tag "${FULL_IMAGE_NAME}" \\
+                 --tag "${LATEST_IMAGE_NAME}" \\
+                 --progress=plain \\
+                 --load=false \\
+                 . || {
+                 BUILD_EXIT_CODE=$?
+                 echo "❌ Build failed or timed out after 20 hours (exit code: ${BUILD_EXIT_CODE})"
+                 cleanup_keepalive
+                 exit 1
+             }
+         else
+             echo "⚠️ Timeout command not available, building without timeout wrapper"
+             docker buildx build \\
+                 --platform ${TARGET_PLATFORM} \\
+                 --target production \\
+                 --build-arg BUILDKIT_INLINE_CACHE=1 \\
+                 --cache-from type=registry,ref="${LATEST_IMAGE_NAME}" \\
+                 --push \\
+                 --tag "${FULL_IMAGE_NAME}" \\
+                 --tag "${LATEST_IMAGE_NAME}" \\
+                 --progress=plain \\
+                 --load=false \\
+                 . || {
+                 BUILD_EXIT_CODE=$?
+                 echo "❌ Build failed (exit code: ${BUILD_EXIT_CODE})"
+                 cleanup_keepalive
+                 exit 1
+             }
+         fi
+         
+         # Stop keepalive process
+         cleanup_keepalive
+         echo "✅ Build process completed"
+     '''
+ }
+ 
+ def verifyImageInRegistry() {
+     return '''
+         echo "🔍 Verifying ARM64 image..."
+         MAX_RETRIES=3
+         RETRY_COUNT=0
+         
+         while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+             if docker buildx imagetools inspect "${FULL_IMAGE_NAME}" 2>&1; then
+                 echo "✅ Image found in registry"
+                 break
+             else
+                 RETRY_COUNT=$((RETRY_COUNT + 1))
+                 if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                     echo "⚠️ Image not found yet, retrying in 10 seconds... (${RETRY_COUNT}/${MAX_RETRIES})"
+                     sleep 10
+                 else
+                     echo "❌ Failed to verify image after ${MAX_RETRIES} attempts"
+                     echo "   Image might still be syncing to registry"
+                 fi
+             fi
+         done
+         
+         # Verify platform in manifest
+         MANIFEST_OUTPUT=$(docker buildx imagetools inspect "${FULL_IMAGE_NAME}" 2>&1 || echo "")
+         if echo "${MANIFEST_OUTPUT}" | grep -qiE "linux/arm64|arm64|aarch64"; then
+             echo "✅ ARM64 platform verified in manifest"
+         else
+             echo "⚠️ ARM64 platform not found in manifest output"
+         fi
+     '''
+ }
+ 
+ def testDockerImage() {
+     return '''
+         set -euxo pipefail
+         
+         IMAGE_TAG="${FULL_IMAGE_NAME}"
+         echo "Testing ARM64 image: ${IMAGE_TAG}"
+         
+         # Pull ARM64 image from registry
+         echo "Pulling ARM64 image from registry..."
+         docker pull --platform ${TARGET_PLATFORM} "${IMAGE_TAG}" || {
+             echo "❌ Failed to pull ARM64 image"
+             exit 1
+         }
+         
+         # Verify image architecture
+         IMAGE_ARCH=$(docker inspect "${IMAGE_TAG}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+         echo "📦 Image architecture: ${IMAGE_ARCH}"
+         
+         if [ "${IMAGE_ARCH}" != "arm64" ] && [ "${IMAGE_ARCH}" != "aarch64" ]; then
+             echo "❌ Image is not ARM64 (got ${IMAGE_ARCH})"
+             exit 1
+         fi
+         echo "✅ Image architecture verified: ARM64"
+         
+         # Test PHP version
+         echo "Testing PHP version..."
+         docker run --rm --platform ${TARGET_PLATFORM} -e APP_ENV=testing "${IMAGE_TAG}" php -v || {
+             echo "❌ PHP version check failed"
+             exit 1
+         }
+         
+         # Test PHP extensions
+         echo "Testing PHP extensions..."
+         docker run --rm --platform ${TARGET_PLATFORM} "${IMAGE_TAG}" php -m > /tmp/phpm.txt || {
+             echo "❌ Failed to list PHP modules"
+             exit 1
+         }
+         
+         # Required extensions
+         REQUIRED_EXTENSIONS="intl gd imagick pdo_mysql bcmath gmp exif zip"
+         MISSING_EXTENSIONS=""
+         
+         for ext in ${REQUIRED_EXTENSIONS}; do
+             if ! grep -qiE "^${ext}$" /tmp/phpm.txt; then
+                 if [ -z "${MISSING_EXTENSIONS}" ]; then
+                     MISSING_EXTENSIONS="${ext}"
+                 else
+                     MISSING_EXTENSIONS="${MISSING_EXTENSIONS} ${ext}"
+                 fi
+             fi
+         done
+         
+         if [ -n "${MISSING_EXTENSIONS}" ]; then
+             echo "❌ Missing required PHP extensions: ${MISSING_EXTENSIONS}"
+             exit 1
+         fi
+         
+         echo "✅ All required PHP extensions are present"
+         echo "✅ ARM64 image testing completed successfully"
+         
+         # Cleanup test image
+         docker rmi "${IMAGE_TAG}" 2>/dev/null || true
+     '''
+ }
+ 
+ def deployToServer() {
+     return '''
+         ssh -i "$SSH_KEY" \\
+             -o StrictHostKeyChecking=no \\
+             -o ConnectTimeout=${SSH_TIMEOUT} \\
+             "$SSH_USER@${DEPLOY_HOST}" \\
+             "REGISTRY='${REGISTRY}' \\
+              IMAGE_NAME='${IMAGE_NAME}' \\
+              IMAGE_TAG='${IMAGE_TAG}' \\
+              TARGET_PLATFORM='${TARGET_PLATFORM}' \\
+              DEPLOY_PATH='${DEPLOY_PATH}' \\
+              BACKUP_PATH='${BACKUP_PATH}' \\
+              DB_HEALTH_CHECK_TIMEOUT='${DB_HEALTH_CHECK_TIMEOUT}' \\
+              APP_HEALTH_CHECK_TIMEOUT='${APP_HEALTH_CHECK_TIMEOUT}' \\
+              FORCE_DEPLOY='${params.FORCE_DEPLOY}' \\
+              bash -s" << 'DEPLOY_SCRIPT'
+ #!/bin/bash
+ set -euxo pipefail
+ 
+ echo "📋 Remote Deployment Environment (ARM64):"
+ echo "  REGISTRY=${REGISTRY}"
+ echo "  IMAGE_NAME=${IMAGE_NAME}"
+ echo "  IMAGE_TAG=${IMAGE_TAG}"
+ echo "  TARGET_PLATFORM=${TARGET_PLATFORM}"
+ echo "  DEPLOY_PATH=${DEPLOY_PATH}"
+ echo "  BACKUP_PATH=${BACKUP_PATH}"
+ echo "  FORCE_DEPLOY=${FORCE_DEPLOY}"
+ 
+ cd "${DEPLOY_PATH}"
+ 
+ APP_IMAGE="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+ PLATFORM="${TARGET_PLATFORM}"
+ echo "📦 Using APP_IMAGE=${APP_IMAGE}"
+ echo "📱 Target Platform: ${PLATFORM} (ARM64 only)"
+ 
+ # Verify server architecture is ARM64
+ SERVER_ARCH=$(uname -m)
+ echo "🖥️  Server architecture: ${SERVER_ARCH}"
+ 
+ if [ "${SERVER_ARCH}" != "aarch64" ] && [ "${SERVER_ARCH}" != "arm64" ]; then
+     echo "❌ ERROR: Server architecture (${SERVER_ARCH}) is not ARM64"
+     echo "   This pipeline is configured for ARM64 only."
+     exit 1
+ fi
+ echo "✅ Server architecture verified: ARM64"
+ 
+ # Cleanup old images and containers
+ echo "🧹 Cleaning up old images and containers..."
+ docker images "${APP_IMAGE}" --format "{{.ID}}" | xargs -r docker rmi -f 2>/dev/null || true
+ docker ps -a --filter "ancestor=${APP_IMAGE}" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
+ 
+ # Pull ARM64 image
+ echo "⬇️ Pulling ARM64 image: ${APP_IMAGE}..."
+ docker pull --platform "${PLATFORM}" "${APP_IMAGE}" || {
+     echo "❌ Failed to pull ARM64 image"
+     exit 1
+ }
+ 
+ # Verify ARM64 image architecture
+ echo "🔍 Verifying ARM64 image architecture..."
+ IMAGE_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+ echo "📦 Image architecture: ${IMAGE_ARCH}"
+ 
+ if [ "${IMAGE_ARCH}" != "arm64" ] && [ "${IMAGE_ARCH}" != "aarch64" ]; then
+     echo "❌ ERROR: Image architecture (${IMAGE_ARCH}) is not ARM64"
+     exit 1
+ fi
+ echo "✅ Verified: Image is ARM64"
+ 
+ # Set platform for docker compose
+ export DOCKER_DEFAULT_PLATFORM="${PLATFORM}"
+ echo "🔧 Set DOCKER_DEFAULT_PLATFORM=${PLATFORM}"
+ 
+ # Pull with docker compose
+ echo "⬇️ Pulling images with docker compose..."
+ docker compose pull app queue scheduler || echo "⚠️ Some image pulls failed, will use existing images"
+ 
+ # Stop existing stack gracefully
+ echo "🛑 Stopping existing stack..."
+ docker compose down --timeout 30 || true
+ 
+ # Start database first
+ echo "🗄️ Starting database container..."
+ docker compose up -d db
+ 
+ # Wait for database to be healthy
+ echo "⏳ Waiting for database to be healthy (max ${DB_HEALTH_CHECK_TIMEOUT}s)..."
+ DB_READY=false
+ for i in $(seq 1 ${DB_HEALTH_CHECK_TIMEOUT}); do
+     if docker compose exec -T db mysqladmin ping -h localhost --silent 2>/dev/null; then
+         echo "✅ Database is healthy"
+         DB_READY=true
+         break
+     fi
+     echo "  Waiting for database... (${i}/${DB_HEALTH_CHECK_TIMEOUT})"
+     sleep 2
+ done
+ 
+ if [ "$DB_READY" != "true" ]; then
+     if [ "${FORCE_DEPLOY}" != "true" ]; then
+         echo "❌ Database failed to become healthy within ${DB_HEALTH_CHECK_TIMEOUT}s"
+         exit 1
+     else
+         echo "⚠️ Database not healthy but FORCE_DEPLOY is true, continuing..."
+     fi
+ fi
+ 
+ # Start Redis, App, Queue, and Scheduler
+ echo "🚀 Starting Redis, App, Queue, and Scheduler..."
+ echo "   Using APP_IMAGE=${APP_IMAGE}"
+ echo "   Using DOCKER_DEFAULT_PLATFORM=${PLATFORM}"
+ APP_IMAGE="${APP_IMAGE}" docker compose up -d redis app queue scheduler
+ 
+ # Show current status
+ echo "📊 Current container status:"
+ docker compose ps
+ 
+ # Wait for app to be healthy
+ echo "⏳ Waiting for app to be healthy (max ${APP_HEALTH_CHECK_TIMEOUT}s)..."
+ APP_READY=false
+ for i in $(seq 1 ${APP_HEALTH_CHECK_TIMEOUT}); do
+     if docker compose exec -T app sh -lc "curl -fsS http://localhost:8080/ >/dev/null 2>&1"; then
+         echo "✅ App is responding"
+         APP_READY=true
+         break
+     fi
+     echo "  Health check attempt ${i}/${APP_HEALTH_CHECK_TIMEOUT}..."
+     sleep 2
+ done
+ 
+ if [ "$APP_READY" != "true" ]; then
+     if [ "${FORCE_DEPLOY}" != "true" ]; then
+         echo "❌ App failed to become healthy within ${APP_HEALTH_CHECK_TIMEOUT}s"
+         echo "📋 Last 100 lines of app logs:"
+         docker compose logs --tail=100 app
+         exit 1
+     else
+         echo "⚠️ App not healthy but FORCE_DEPLOY is true, continuing..."
+     fi
+ fi
+ 
+ # Create database backup before migrations
+ echo "💾 Creating database backup..."
+ mkdir -p "${BACKUP_PATH}"
+ if docker compose ps db >/dev/null 2>&1; then
+     DATE=$(date +%F-%H%M%S)
+     BACKUP_FILE="${BACKUP_PATH}/store-${DATE}.sql.gz"
+     
+     # Get DB credentials from .env or use defaults
+     source "${DEPLOY_PATH}/.env" 2>/dev/null || true
+     MYSQL_USER="${DB_USERNAME:-store}"
+     MYSQL_PASSWORD="${DB_PASSWORD:-}"
+     MYSQL_DATABASE="${DB_DATABASE:-store}"
+     
+     if [ -n "$MYSQL_PASSWORD" ]; then
+         docker compose exec -T db sh -lc \\
+             "mysqldump -u'${MYSQL_USER}' -p'${MYSQL_PASSWORD}' '${MYSQL_DATABASE}'" \\
+             2>/dev/null | gzip > "${BACKUP_FILE}" && \\
+             echo "✅ Backup created: ${BACKUP_FILE}" || \\
+             echo "⚠️ Backup creation failed (non-blocking)"
+     else
+         echo "⚠️ DB_PASSWORD not set, skipping backup"
+     fi
+ fi
+ 
+ # Run migrations and optimize caches
+ echo "🔄 Running migrations and optimizing caches..."
+ docker compose exec -T app php artisan migrate --force || {
+     if [ "${FORCE_DEPLOY}" != "true" ]; then
+         echo "❌ Migration failed"
+         exit 1
+     else
+         echo "⚠️ Migration failed but FORCE_DEPLOY is true, continuing..."
+     fi
+ }
+ 
+ docker compose exec -T app php artisan config:cache || echo "⚠️ Config cache failed"
+ docker compose exec -T app php artisan route:cache || echo "⚠️ Route cache failed"
+ docker compose exec -T app php artisan view:cache || echo "⚠️ View cache failed"
+ 
+ # Final health check
+ echo "🔍 Final health check..."
+ if ! docker compose exec -T app sh -lc "curl -fsS http://localhost:8080/ >/dev/null 2>&1"; then
+     if [ "${FORCE_DEPLOY}" != "true" ]; then
+         echo "❌ Final health check failed"
+         exit 1
+     else
+         echo "⚠️ Final health check failed but FORCE_DEPLOY is true, deployment completed with warnings"
+     fi
+ fi
+ 
+ echo "✅ Deployment completed successfully!"
+ 
+ # Cleanup old images
+ echo "🧹 Cleaning up old Docker images..."
+ docker image prune -f || true
+ 
+ # Logout from Docker
+ docker logout "${REGISTRY}" || true
+ DEPLOY_SCRIPT
+     '''
+ }
+ 
+ pipeline {
     agent any
 
     parameters {
@@ -133,226 +556,6 @@ pipeline {
         
         // Scheduled build setiap hari jam 2 pagi untuk build teratur
         cron('H 2 * * *')
-    }
-
-    // Helper functions - defined outside pipeline block
-    def validateParameters() {
-        if (params.DEPLOY_ENV == 'production' && env.BRANCH_NAME != 'main' && !params.FORCE_DEPLOY) {
-            error("Production deployment hanya diizinkan dari branch main. Gunakan FORCE_DEPLOY untuk override.")
-        }
-        
-        if (params.IMAGE_TAG_SUFFIX && !params.IMAGE_TAG_SUFFIX.matches(/^-[a-zA-Z0-9._-]+$/)) {
-            error("IMAGE_TAG_SUFFIX harus dimulai dengan '-' dan hanya mengandung alphanumeric, dot, underscore, atau dash.")
-        }
-    }
-
-    def setupBuildxBuilder() {
-        return '''
-            # Setup Docker context for DinD
-            if ! docker context inspect ${DOCKER_CONTEXT} >/dev/null 2>&1; then
-                echo "Creating Docker context '${DOCKER_CONTEXT}'..."
-                docker context create ${DOCKER_CONTEXT} \\
-                    --docker "host=tcp://docker:2376,ca=/certs/client/ca.pem,cert=/certs/client/cert.pem,key=/certs/client/key.pem"
-            fi
-            
-            # Use DinD context
-            docker context use ${DOCKER_CONTEXT}
-            
-            # Install QEMU/binfmt for cross-platform emulation
-            echo "🔧 Installing QEMU/binfmt for ARM64 emulation..."
-            docker --context ${DOCKER_CONTEXT} run --rm --privileged tonistiigi/binfmt --install linux/arm64 || {
-                echo "⚠️ QEMU/binfmt installation failed (may already be installed)"
-            }
-            
-            # Setup buildx builder for cross-platform
-            if ! docker buildx inspect ${BUILDER_NAME} >/dev/null 2>&1; then
-                echo "Creating buildx builder '${BUILDER_NAME}' for cross-platform build..."
-                docker buildx create \\
-                    --name ${BUILDER_NAME} \\
-                    --driver docker-container \\
-                    --use \\
-                    --platform linux/amd64,linux/arm64 \\
-                    ${DOCKER_CONTEXT} || {
-                    echo "⚠️ Failed to create builder with docker-container driver, trying default..."
-                    docker buildx create \\
-                        --name ${BUILDER_NAME} \\
-                        --use \\
-                        --platform linux/amd64,linux/arm64 \\
-                        ${DOCKER_CONTEXT}
-                }
-            else
-                echo "Using existing buildx builder '${BUILDER_NAME}'..."
-                docker buildx use ${BUILDER_NAME}
-            fi
-            
-            # Inspect builder to verify cross-platform support
-            echo "🔍 Inspecting buildx builder capabilities..."
-            docker buildx inspect ${BUILDER_NAME}
-        '''
-    }
-
-    def buildDockerImage() {
-        return '''
-            # Start keepalive background process
-            (
-                while true; do
-                    sleep 30
-                    echo "💓 [KEEPALIVE] Build still running... $(date '+%Y-%m-%d %H:%M:%S')"
-                done
-            ) &
-            KEEPALIVE_PID=$!
-            
-            # Function to cleanup keepalive on exit
-            cleanup_keepalive() {
-                if [ -n "${KEEPALIVE_PID}" ]; then
-                    kill "${KEEPALIVE_PID}" 2>/dev/null || true
-                    wait "${KEEPALIVE_PID}" 2>/dev/null || true
-                fi
-            }
-            trap cleanup_keepalive EXIT INT TERM
-            
-            echo "✅ Keepalive process started (PID: ${KEEPALIVE_PID})"
-            
-            # Build with timeout protection
-            if command -v timeout >/dev/null 2>&1; then
-                echo "✅ Using timeout command for build protection"
-                timeout 72000 docker buildx build \\
-                    --platform ${TARGET_PLATFORM} \\
-                    --target production \\
-                    --build-arg BUILDKIT_INLINE_CACHE=1 \\
-                    --cache-from type=registry,ref="${LATEST_IMAGE_NAME}" \\
-                    --push \\
-                    --tag "${FULL_IMAGE_NAME}" \\
-                    --tag "${LATEST_IMAGE_NAME}" \\
-                    --progress=plain \\
-                    --load=false \\
-                    . || {
-                    BUILD_EXIT_CODE=$?
-                    echo "❌ Build failed or timed out after 20 hours (exit code: ${BUILD_EXIT_CODE})"
-                    cleanup_keepalive
-                    exit 1
-                }
-            else
-                echo "⚠️ Timeout command not available, building without timeout wrapper"
-                docker buildx build \\
-                    --platform ${TARGET_PLATFORM} \\
-                    --target production \\
-                    --build-arg BUILDKIT_INLINE_CACHE=1 \\
-                    --cache-from type=registry,ref="${LATEST_IMAGE_NAME}" \\
-                    --push \\
-                    --tag "${FULL_IMAGE_NAME}" \\
-                    --tag "${LATEST_IMAGE_NAME}" \\
-                    --progress=plain \\
-                    --load=false \\
-                    . || {
-                    BUILD_EXIT_CODE=$?
-                    echo "❌ Build failed (exit code: ${BUILD_EXIT_CODE})"
-                    cleanup_keepalive
-                    exit 1
-                }
-            fi
-            
-            # Stop keepalive process
-            cleanup_keepalive
-            echo "✅ Build process completed"
-        '''
-    }
-
-    def verifyImageInRegistry() {
-        return '''
-            echo "🔍 Verifying ARM64 image..."
-            MAX_RETRIES=3
-            RETRY_COUNT=0
-            
-            while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-                if docker buildx imagetools inspect "${FULL_IMAGE_NAME}" 2>&1; then
-                    echo "✅ Image found in registry"
-                    break
-                else
-                    RETRY_COUNT=$((RETRY_COUNT + 1))
-                    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                        echo "⚠️ Image not found yet, retrying in 10 seconds... (${RETRY_COUNT}/${MAX_RETRIES})"
-                        sleep 10
-                    else
-                        echo "❌ Failed to verify image after ${MAX_RETRIES} attempts"
-                        echo "   Image might still be syncing to registry"
-                    fi
-                fi
-            done
-            
-            # Verify platform in manifest
-            MANIFEST_OUTPUT=$(docker buildx imagetools inspect "${FULL_IMAGE_NAME}" 2>&1 || echo "")
-            if echo "${MANIFEST_OUTPUT}" | grep -qiE "linux/arm64|arm64|aarch64"; then
-                echo "✅ ARM64 platform verified in manifest"
-            else
-                echo "⚠️ ARM64 platform not found in manifest output"
-            fi
-        '''
-    }
-
-    def testDockerImage() {
-        return '''
-            set -euxo pipefail
-            
-            IMAGE_TAG="${FULL_IMAGE_NAME}"
-            echo "Testing ARM64 image: ${IMAGE_TAG}"
-            
-            # Pull ARM64 image from registry
-            echo "Pulling ARM64 image from registry..."
-            docker pull --platform ${TARGET_PLATFORM} "${IMAGE_TAG}" || {
-                echo "❌ Failed to pull ARM64 image"
-                exit 1
-            }
-            
-            # Verify image architecture
-            IMAGE_ARCH=$(docker inspect "${IMAGE_TAG}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-            echo "📦 Image architecture: ${IMAGE_ARCH}"
-            
-            if [ "${IMAGE_ARCH}" != "arm64" ] && [ "${IMAGE_ARCH}" != "aarch64" ]; then
-                echo "❌ Image is not ARM64 (got ${IMAGE_ARCH})"
-                exit 1
-            fi
-            echo "✅ Image architecture verified: ARM64"
-            
-            # Test PHP version
-            echo "Testing PHP version..."
-            docker run --rm --platform ${TARGET_PLATFORM} -e APP_ENV=testing "${IMAGE_TAG}" php -v || {
-                echo "❌ PHP version check failed"
-                exit 1
-            }
-            
-            # Test PHP extensions
-            echo "Testing PHP extensions..."
-            docker run --rm --platform ${TARGET_PLATFORM} "${IMAGE_TAG}" php -m > /tmp/phpm.txt || {
-                echo "❌ Failed to list PHP modules"
-                exit 1
-            }
-            
-            # Required extensions
-            REQUIRED_EXTENSIONS="intl gd imagick pdo_mysql bcmath gmp exif zip"
-            MISSING_EXTENSIONS=""
-            
-            for ext in ${REQUIRED_EXTENSIONS}; do
-                if ! grep -qiE "^${ext}$" /tmp/phpm.txt; then
-                    if [ -z "${MISSING_EXTENSIONS}" ]; then
-                        MISSING_EXTENSIONS="${ext}"
-                    else
-                        MISSING_EXTENSIONS="${MISSING_EXTENSIONS} ${ext}"
-                    fi
-                fi
-            done
-            
-            if [ -n "${MISSING_EXTENSIONS}" ]; then
-                echo "❌ Missing required PHP extensions: ${MISSING_EXTENSIONS}"
-                exit 1
-            fi
-            
-            echo "✅ All required PHP extensions are present"
-            echo "✅ ARM64 image testing completed successfully"
-            
-            # Cleanup test image
-            docker rmi "${IMAGE_TAG}" 2>/dev/null || true
-        '''
     }
 
     stages {
@@ -738,207 +941,4 @@ pipeline {
         }
     }
     }
-
-    // Function to deploy to server
-    def deployToServer() {
-        return '''
-            ssh -i "$SSH_KEY" \\
-                -o StrictHostKeyChecking=no \\
-                -o ConnectTimeout=${SSH_TIMEOUT} \\
-                "$SSH_USER@${DEPLOY_HOST}" \\
-                "REGISTRY='${REGISTRY}' \\
-                 IMAGE_NAME='${IMAGE_NAME}' \\
-                 IMAGE_TAG='${IMAGE_TAG}' \\
-                 TARGET_PLATFORM='${TARGET_PLATFORM}' \\
-                 DEPLOY_PATH='${DEPLOY_PATH}' \\
-                 BACKUP_PATH='${BACKUP_PATH}' \\
-                 DB_HEALTH_CHECK_TIMEOUT='${DB_HEALTH_CHECK_TIMEOUT}' \\
-                 APP_HEALTH_CHECK_TIMEOUT='${APP_HEALTH_CHECK_TIMEOUT}' \\
-                 FORCE_DEPLOY='${params.FORCE_DEPLOY}' \\
-                 bash -s" << 'DEPLOY_SCRIPT'
-#!/bin/bash
-set -euxo pipefail
-
-echo "📋 Remote Deployment Environment (ARM64):"
-echo "  REGISTRY=${REGISTRY}"
-echo "  IMAGE_NAME=${IMAGE_NAME}"
-echo "  IMAGE_TAG=${IMAGE_TAG}"
-echo "  TARGET_PLATFORM=${TARGET_PLATFORM}"
-echo "  DEPLOY_PATH=${DEPLOY_PATH}"
-echo "  BACKUP_PATH=${BACKUP_PATH}"
-echo "  FORCE_DEPLOY=${FORCE_DEPLOY}"
-
-cd "${DEPLOY_PATH}"
-
-APP_IMAGE="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
-PLATFORM="${TARGET_PLATFORM}"
-echo "📦 Using APP_IMAGE=${APP_IMAGE}"
-echo "📱 Target Platform: ${PLATFORM} (ARM64 only)"
-
-# Verify server architecture is ARM64
-SERVER_ARCH=$(uname -m)
-echo "🖥️  Server architecture: ${SERVER_ARCH}"
-
-if [ "${SERVER_ARCH}" != "aarch64" ] && [ "${SERVER_ARCH}" != "arm64" ]; then
-    echo "❌ ERROR: Server architecture (${SERVER_ARCH}) is not ARM64"
-    echo "   This pipeline is configured for ARM64 only."
-    exit 1
-fi
-echo "✅ Server architecture verified: ARM64"
-
-# Cleanup old images and containers
-echo "🧹 Cleaning up old images and containers..."
-docker images "${APP_IMAGE}" --format "{{.ID}}" | xargs -r docker rmi -f 2>/dev/null || true
-docker ps -a --filter "ancestor=${APP_IMAGE}" --format "{{.ID}}" | xargs -r docker rm -f 2>/dev/null || true
-
-# Pull ARM64 image
-echo "⬇️ Pulling ARM64 image: ${APP_IMAGE}..."
-docker pull --platform "${PLATFORM}" "${APP_IMAGE}" || {
-    echo "❌ Failed to pull ARM64 image"
-    exit 1
 }
-
-# Verify ARM64 image architecture
-echo "🔍 Verifying ARM64 image architecture..."
-IMAGE_ARCH=$(docker inspect "${APP_IMAGE}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-echo "📦 Image architecture: ${IMAGE_ARCH}"
-
-if [ "${IMAGE_ARCH}" != "arm64" ] && [ "${IMAGE_ARCH}" != "aarch64" ]; then
-    echo "❌ ERROR: Image architecture (${IMAGE_ARCH}) is not ARM64"
-    exit 1
-fi
-echo "✅ Verified: Image is ARM64"
-
-# Set platform for docker compose
-export DOCKER_DEFAULT_PLATFORM="${PLATFORM}"
-echo "🔧 Set DOCKER_DEFAULT_PLATFORM=${PLATFORM}"
-
-# Pull with docker compose
-echo "⬇️ Pulling images with docker compose..."
-docker compose pull app queue scheduler || echo "⚠️ Some image pulls failed, will use existing images"
-
-# Stop existing stack gracefully
-echo "🛑 Stopping existing stack..."
-docker compose down --timeout 30 || true
-
-# Start database first
-echo "🗄️ Starting database container..."
-docker compose up -d db
-
-# Wait for database to be healthy
-echo "⏳ Waiting for database to be healthy (max ${DB_HEALTH_CHECK_TIMEOUT}s)..."
-DB_READY=false
-for i in $(seq 1 ${DB_HEALTH_CHECK_TIMEOUT}); do
-    if docker compose exec -T db mysqladmin ping -h localhost --silent 2>/dev/null; then
-        echo "✅ Database is healthy"
-        DB_READY=true
-        break
-    fi
-    echo "  Waiting for database... (${i}/${DB_HEALTH_CHECK_TIMEOUT})"
-    sleep 2
-done
-
-if [ "$DB_READY" != "true" ]; then
-    if [ "${FORCE_DEPLOY}" != "true" ]; then
-        echo "❌ Database failed to become healthy within ${DB_HEALTH_CHECK_TIMEOUT}s"
-        exit 1
-    else
-        echo "⚠️ Database not healthy but FORCE_DEPLOY is true, continuing..."
-    fi
-fi
-
-# Start Redis, App, Queue, and Scheduler
-echo "🚀 Starting Redis, App, Queue, and Scheduler..."
-echo "   Using APP_IMAGE=${APP_IMAGE}"
-echo "   Using DOCKER_DEFAULT_PLATFORM=${PLATFORM}"
-APP_IMAGE="${APP_IMAGE}" docker compose up -d redis app queue scheduler
-
-# Show current status
-echo "📊 Current container status:"
-docker compose ps
-
-# Wait for app to be healthy
-echo "⏳ Waiting for app to be healthy (max ${APP_HEALTH_CHECK_TIMEOUT}s)..."
-APP_READY=false
-for i in $(seq 1 ${APP_HEALTH_CHECK_TIMEOUT}); do
-    if docker compose exec -T app sh -lc "curl -fsS http://localhost:8080/ >/dev/null 2>&1"; then
-        echo "✅ App is responding"
-        APP_READY=true
-        break
-    fi
-    echo "  Health check attempt ${i}/${APP_HEALTH_CHECK_TIMEOUT}..."
-    sleep 2
-done
-
-if [ "$APP_READY" != "true" ]; then
-    if [ "${FORCE_DEPLOY}" != "true" ]; then
-        echo "❌ App failed to become healthy within ${APP_HEALTH_CHECK_TIMEOUT}s"
-        echo "📋 Last 100 lines of app logs:"
-        docker compose logs --tail=100 app
-        exit 1
-    else
-        echo "⚠️ App not healthy but FORCE_DEPLOY is true, continuing..."
-    fi
-fi
-
-# Create database backup before migrations
-echo "💾 Creating database backup..."
-mkdir -p "${BACKUP_PATH}"
-if docker compose ps db >/dev/null 2>&1; then
-    DATE=$(date +%F-%H%M%S)
-    BACKUP_FILE="${BACKUP_PATH}/store-${DATE}.sql.gz"
-    
-    # Get DB credentials from .env or use defaults
-    source "${DEPLOY_PATH}/.env" 2>/dev/null || true
-    MYSQL_USER="${DB_USERNAME:-store}"
-    MYSQL_PASSWORD="${DB_PASSWORD:-}"
-    MYSQL_DATABASE="${DB_DATABASE:-store}"
-    
-    if [ -n "$MYSQL_PASSWORD" ]; then
-        docker compose exec -T db sh -lc \\
-            "mysqldump -u'${MYSQL_USER}' -p'${MYSQL_PASSWORD}' '${MYSQL_DATABASE}'" \\
-            2>/dev/null | gzip > "${BACKUP_FILE}" && \\
-            echo "✅ Backup created: ${BACKUP_FILE}" || \\
-            echo "⚠️ Backup creation failed (non-blocking)"
-    else
-        echo "⚠️ DB_PASSWORD not set, skipping backup"
-    fi
-fi
-
-# Run migrations and optimize caches
-echo "🔄 Running migrations and optimizing caches..."
-docker compose exec -T app php artisan migrate --force || {
-    if [ "${FORCE_DEPLOY}" != "true" ]; then
-        echo "❌ Migration failed"
-        exit 1
-    else
-        echo "⚠️ Migration failed but FORCE_DEPLOY is true, continuing..."
-    fi
-}
-
-docker compose exec -T app php artisan config:cache || echo "⚠️ Config cache failed"
-docker compose exec -T app php artisan route:cache || echo "⚠️ Route cache failed"
-docker compose exec -T app php artisan view:cache || echo "⚠️ View cache failed"
-
-# Final health check
-echo "🔍 Final health check..."
-if ! docker compose exec -T app sh -lc "curl -fsS http://localhost:8080/ >/dev/null 2>&1"; then
-    if [ "${FORCE_DEPLOY}" != "true" ]; then
-        echo "❌ Final health check failed"
-        exit 1
-    else
-        echo "⚠️ Final health check failed but FORCE_DEPLOY is true, deployment completed with warnings"
-    fi
-fi
-
-echo "✅ Deployment completed successfully!"
-
-# Cleanup old images
-echo "🧹 Cleaning up old Docker images..."
-docker image prune -f || true
-
-# Logout from Docker
-docker logout "${REGISTRY}" || true
-DEPLOY_SCRIPT
-        '''
-    }
