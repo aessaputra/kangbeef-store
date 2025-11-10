@@ -240,7 +240,8 @@ pipeline {
             when {
                 anyOf {
                     expression { params.DEPLOY_ENV == 'production' || params.DEPLOY_ENV == 'staging' }
-                    expression { env.BRANCH_NAME == 'main' && params.DEPLOY_ENV != 'skip' }
+                    expression { (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == null) && params.DEPLOY_ENV != 'skip' }
+                    expression { params.DEPLOY_ENV != 'skip' }
                 }
             }
             steps {
