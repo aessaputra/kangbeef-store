@@ -135,238 +135,224 @@ pipeline {
         cron('H 2 * * *')
     }
 
-    // Validation function
+    // Helper functions - defined outside pipeline block
     def validateParameters() {
-        script {
-            if (params.DEPLOY_ENV == 'production' && env.BRANCH_NAME != 'main' && !params.FORCE_DEPLOY) {
-                error("Production deployment hanya diizinkan dari branch main. Gunakan FORCE_DEPLOY untuk override.")
+        if (params.DEPLOY_ENV == 'production' && env.BRANCH_NAME != 'main' && !params.FORCE_DEPLOY) {
+            error("Production deployment hanya diizinkan dari branch main. Gunakan FORCE_DEPLOY untuk override.")
+        }
+        
+        if (params.IMAGE_TAG_SUFFIX && !params.IMAGE_TAG_SUFFIX.matches(/^-[a-zA-Z0-9._-]+$/)) {
+            error("IMAGE_TAG_SUFFIX harus dimulai dengan '-' dan hanya mengandung alphanumeric, dot, underscore, atau dash.")
+        }
+    }
+
+    def setupBuildxBuilder() {
+        return '''
+            # Setup Docker context for DinD
+            if ! docker context inspect ${DOCKER_CONTEXT} >/dev/null 2>&1; then
+                echo "Creating Docker context '${DOCKER_CONTEXT}'..."
+                docker context create ${DOCKER_CONTEXT} \\
+                    --docker "host=tcp://docker:2376,ca=/certs/client/ca.pem,cert=/certs/client/cert.pem,key=/certs/client/key.pem"
+            fi
+            
+            # Use DinD context
+            docker context use ${DOCKER_CONTEXT}
+            
+            # Install QEMU/binfmt for cross-platform emulation
+            echo "🔧 Installing QEMU/binfmt for ARM64 emulation..."
+            docker --context ${DOCKER_CONTEXT} run --rm --privileged tonistiigi/binfmt --install linux/arm64 || {
+                echo "⚠️ QEMU/binfmt installation failed (may already be installed)"
             }
             
-            if (params.IMAGE_TAG_SUFFIX && !params.IMAGE_TAG_SUFFIX.matches(/^-[a-zA-Z0-9._-]+$/)) {
-                error("IMAGE_TAG_SUFFIX harus dimulai dengan '-' dan hanya mengandung alphanumeric, dot, underscore, atau dash.")
-            }
-        }
-    }
-
-    // Function to setup Docker buildx builder
-    def setupBuildxBuilder() {
-        script {
-            return '''
-                # Setup Docker context for DinD
-                if ! docker context inspect ${DOCKER_CONTEXT} >/dev/null 2>&1; then
-                    echo "Creating Docker context '${DOCKER_CONTEXT}'..."
-                    docker context create ${DOCKER_CONTEXT} \\
-                        --docker "host=tcp://docker:2376,ca=/certs/client/ca.pem,cert=/certs/client/cert.pem,key=/certs/client/key.pem"
-                fi
-                
-                # Use DinD context
-                docker context use ${DOCKER_CONTEXT}
-                
-                # Install QEMU/binfmt for cross-platform emulation
-                echo "🔧 Installing QEMU/binfmt for ARM64 emulation..."
-                docker --context ${DOCKER_CONTEXT} run --rm --privileged tonistiigi/binfmt --install linux/arm64 || {
-                    echo "⚠️ QEMU/binfmt installation failed (may already be installed)"
-                }
-                
-                # Setup buildx builder for cross-platform
-                if ! docker buildx inspect ${BUILDER_NAME} >/dev/null 2>&1; then
-                    echo "Creating buildx builder '${BUILDER_NAME}' for cross-platform build..."
+            # Setup buildx builder for cross-platform
+            if ! docker buildx inspect ${BUILDER_NAME} >/dev/null 2>&1; then
+                echo "Creating buildx builder '${BUILDER_NAME}' for cross-platform build..."
+                docker buildx create \\
+                    --name ${BUILDER_NAME} \\
+                    --driver docker-container \\
+                    --use \\
+                    --platform linux/amd64,linux/arm64 \\
+                    ${DOCKER_CONTEXT} || {
+                    echo "⚠️ Failed to create builder with docker-container driver, trying default..."
                     docker buildx create \\
                         --name ${BUILDER_NAME} \\
-                        --driver docker-container \\
                         --use \\
                         --platform linux/amd64,linux/arm64 \\
-                        ${DOCKER_CONTEXT} || {
-                        echo "⚠️ Failed to create builder with docker-container driver, trying default..."
-                        docker buildx create \\
-                            --name ${BUILDER_NAME} \\
-                            --use \\
-                            --platform linux/amd64,linux/arm64 \\
-                            ${DOCKER_CONTEXT}
-                    }
-                else
-                    echo "Using existing buildx builder '${BUILDER_NAME}'..."
-                    docker buildx use ${BUILDER_NAME}
-                fi
-                
-                # Inspect builder to verify cross-platform support
-                echo "🔍 Inspecting buildx builder capabilities..."
-                docker buildx inspect ${BUILDER_NAME}
-            '''
-        }
+                        ${DOCKER_CONTEXT}
+                }
+            else
+                echo "Using existing buildx builder '${BUILDER_NAME}'..."
+                docker buildx use ${BUILDER_NAME}
+            fi
+            
+            # Inspect builder to verify cross-platform support
+            echo "🔍 Inspecting buildx builder capabilities..."
+            docker buildx inspect ${BUILDER_NAME}
+        '''
     }
 
-    // Function to build Docker image with timeout protection
     def buildDockerImage() {
-        script {
-            return '''
-                # Start keepalive background process
-                (
-                    while true; do
-                        sleep 30
-                        echo "💓 [KEEPALIVE] Build still running... $(date '+%Y-%m-%d %H:%M:%S')"
-                    done
-                ) &
-                KEEPALIVE_PID=$!
-                
-                # Function to cleanup keepalive on exit
-                cleanup_keepalive() {
-                    if [ -n "${KEEPALIVE_PID}" ]; then
-                        kill "${KEEPALIVE_PID}" 2>/dev/null || true
-                        wait "${KEEPALIVE_PID}" 2>/dev/null || true
-                    fi
-                }
-                trap cleanup_keepalive EXIT INT TERM
-                
-                echo "✅ Keepalive process started (PID: ${KEEPALIVE_PID})"
-                
-                # Build with timeout protection
-                if command -v timeout >/dev/null 2>&1; then
-                    echo "✅ Using timeout command for build protection"
-                    timeout 72000 docker buildx build \\
-                        --platform ${TARGET_PLATFORM} \\
-                        --target production \\
-                        --build-arg BUILDKIT_INLINE_CACHE=1 \\
-                        --cache-from type=registry,ref="${LATEST_IMAGE_NAME}" \\
-                        --push \\
-                        --tag "${FULL_IMAGE_NAME}" \\
-                        --tag "${LATEST_IMAGE_NAME}" \\
-                        --progress=plain \\
-                        --load=false \\
-                        . || {
-                        BUILD_EXIT_CODE=$?
-                        echo "❌ Build failed or timed out after 20 hours (exit code: ${BUILD_EXIT_CODE})"
-                        cleanup_keepalive
-                        exit 1
-                    }
-                else
-                    echo "⚠️ Timeout command not available, building without timeout wrapper"
-                    docker buildx build \\
-                        --platform ${TARGET_PLATFORM} \\
-                        --target production \\
-                        --build-arg BUILDKIT_INLINE_CACHE=1 \\
-                        --cache-from type=registry,ref="${LATEST_IMAGE_NAME}" \\
-                        --push \\
-                        --tag "${FULL_IMAGE_NAME}" \\
-                        --tag "${LATEST_IMAGE_NAME}" \\
-                        --progress=plain \\
-                        --load=false \\
-                        . || {
-                        BUILD_EXIT_CODE=$?
-                        echo "❌ Build failed (exit code: ${BUILD_EXIT_CODE})"
-                        cleanup_keepalive
-                        exit 1
-                    }
+        return '''
+            # Start keepalive background process
+            (
+                while true; do
+                    sleep 30
+                    echo "💓 [KEEPALIVE] Build still running... $(date '+%Y-%m-%d %H:%M:%S')"
+                done
+            ) &
+            KEEPALIVE_PID=$!
+            
+            # Function to cleanup keepalive on exit
+            cleanup_keepalive() {
+                if [ -n "${KEEPALIVE_PID}" ]; then
+                    kill "${KEEPALIVE_PID}" 2>/dev/null || true
+                    wait "${KEEPALIVE_PID}" 2>/dev/null || true
                 fi
-                
-                # Stop keepalive process
-                cleanup_keepalive
-                echo "✅ Build process completed"
-            '''
-        }
+            }
+            trap cleanup_keepalive EXIT INT TERM
+            
+            echo "✅ Keepalive process started (PID: ${KEEPALIVE_PID})"
+            
+            # Build with timeout protection
+            if command -v timeout >/dev/null 2>&1; then
+                echo "✅ Using timeout command for build protection"
+                timeout 72000 docker buildx build \\
+                    --platform ${TARGET_PLATFORM} \\
+                    --target production \\
+                    --build-arg BUILDKIT_INLINE_CACHE=1 \\
+                    --cache-from type=registry,ref="${LATEST_IMAGE_NAME}" \\
+                    --push \\
+                    --tag "${FULL_IMAGE_NAME}" \\
+                    --tag "${LATEST_IMAGE_NAME}" \\
+                    --progress=plain \\
+                    --load=false \\
+                    . || {
+                    BUILD_EXIT_CODE=$?
+                    echo "❌ Build failed or timed out after 20 hours (exit code: ${BUILD_EXIT_CODE})"
+                    cleanup_keepalive
+                    exit 1
+                }
+            else
+                echo "⚠️ Timeout command not available, building without timeout wrapper"
+                docker buildx build \\
+                    --platform ${TARGET_PLATFORM} \\
+                    --target production \\
+                    --build-arg BUILDKIT_INLINE_CACHE=1 \\
+                    --cache-from type=registry,ref="${LATEST_IMAGE_NAME}" \\
+                    --push \\
+                    --tag "${FULL_IMAGE_NAME}" \\
+                    --tag "${LATEST_IMAGE_NAME}" \\
+                    --progress=plain \\
+                    --load=false \\
+                    . || {
+                    BUILD_EXIT_CODE=$?
+                    echo "❌ Build failed (exit code: ${BUILD_EXIT_CODE})"
+                    cleanup_keepalive
+                    exit 1
+                }
+            fi
+            
+            # Stop keepalive process
+            cleanup_keepalive
+            echo "✅ Build process completed"
+        '''
     }
 
-    // Function to verify image in registry
     def verifyImageInRegistry() {
-        script {
-            return '''
-                echo "🔍 Verifying ARM64 image..."
-                MAX_RETRIES=3
-                RETRY_COUNT=0
-                
-                while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-                    if docker buildx imagetools inspect "${FULL_IMAGE_NAME}" 2>&1; then
-                        echo "✅ Image found in registry"
-                        break
-                    else
-                        RETRY_COUNT=$((RETRY_COUNT + 1))
-                        if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                            echo "⚠️ Image not found yet, retrying in 10 seconds... (${RETRY_COUNT}/${MAX_RETRIES})"
-                            sleep 10
-                        else
-                            echo "❌ Failed to verify image after ${MAX_RETRIES} attempts"
-                            echo "   Image might still be syncing to registry"
-                        fi
-                    fi
-                done
-                
-                # Verify platform in manifest
-                MANIFEST_OUTPUT=$(docker buildx imagetools inspect "${FULL_IMAGE_NAME}" 2>&1 || echo "")
-                if echo "${MANIFEST_OUTPUT}" | grep -qiE "linux/arm64|arm64|aarch64"; then
-                    echo "✅ ARM64 platform verified in manifest"
+        return '''
+            echo "🔍 Verifying ARM64 image..."
+            MAX_RETRIES=3
+            RETRY_COUNT=0
+            
+            while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                if docker buildx imagetools inspect "${FULL_IMAGE_NAME}" 2>&1; then
+                    echo "✅ Image found in registry"
+                    break
                 else
-                    echo "⚠️ ARM64 platform not found in manifest output"
+                    RETRY_COUNT=$((RETRY_COUNT + 1))
+                    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                        echo "⚠️ Image not found yet, retrying in 10 seconds... (${RETRY_COUNT}/${MAX_RETRIES})"
+                        sleep 10
+                    else
+                        echo "❌ Failed to verify image after ${MAX_RETRIES} attempts"
+                        echo "   Image might still be syncing to registry"
+                    fi
                 fi
-            '''
-        }
+            done
+            
+            # Verify platform in manifest
+            MANIFEST_OUTPUT=$(docker buildx imagetools inspect "${FULL_IMAGE_NAME}" 2>&1 || echo "")
+            if echo "${MANIFEST_OUTPUT}" | grep -qiE "linux/arm64|arm64|aarch64"; then
+                echo "✅ ARM64 platform verified in manifest"
+            else
+                echo "⚠️ ARM64 platform not found in manifest output"
+            fi
+        '''
     }
 
-    // Function to test Docker image
     def testDockerImage() {
-        script {
-            return '''
-                set -euxo pipefail
-                
-                IMAGE_TAG="${FULL_IMAGE_NAME}"
-                echo "Testing ARM64 image: ${IMAGE_TAG}"
-                
-                # Pull ARM64 image from registry
-                echo "Pulling ARM64 image from registry..."
-                docker pull --platform ${TARGET_PLATFORM} "${IMAGE_TAG}" || {
-                    echo "❌ Failed to pull ARM64 image"
-                    exit 1
-                }
-                
-                # Verify image architecture
-                IMAGE_ARCH=$(docker inspect "${IMAGE_TAG}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
-                echo "📦 Image architecture: ${IMAGE_ARCH}"
-                
-                if [ "${IMAGE_ARCH}" != "arm64" ] && [ "${IMAGE_ARCH}" != "aarch64" ]; then
-                    echo "❌ Image is not ARM64 (got ${IMAGE_ARCH})"
-                    exit 1
-                fi
-                echo "✅ Image architecture verified: ARM64"
-                
-                # Test PHP version
-                echo "Testing PHP version..."
-                docker run --rm --platform ${TARGET_PLATFORM} -e APP_ENV=testing "${IMAGE_TAG}" php -v || {
-                    echo "❌ PHP version check failed"
-                    exit 1
-                }
-                
-                # Test PHP extensions
-                echo "Testing PHP extensions..."
-                docker run --rm --platform ${TARGET_PLATFORM} "${IMAGE_TAG}" php -m > /tmp/phpm.txt || {
-                    echo "❌ Failed to list PHP modules"
-                    exit 1
-                }
-                
-                # Required extensions
-                REQUIRED_EXTENSIONS="intl gd imagick pdo_mysql bcmath gmp exif zip"
-                MISSING_EXTENSIONS=""
-                
-                for ext in ${REQUIRED_EXTENSIONS}; do
-                    if ! grep -qiE "^${ext}$" /tmp/phpm.txt; then
-                        if [ -z "${MISSING_EXTENSIONS}" ]; then
-                            MISSING_EXTENSIONS="${ext}"
-                        else
-                            MISSING_EXTENSIONS="${MISSING_EXTENSIONS} ${ext}"
-                        fi
+        return '''
+            set -euxo pipefail
+            
+            IMAGE_TAG="${FULL_IMAGE_NAME}"
+            echo "Testing ARM64 image: ${IMAGE_TAG}"
+            
+            # Pull ARM64 image from registry
+            echo "Pulling ARM64 image from registry..."
+            docker pull --platform ${TARGET_PLATFORM} "${IMAGE_TAG}" || {
+                echo "❌ Failed to pull ARM64 image"
+                exit 1
+            }
+            
+            # Verify image architecture
+            IMAGE_ARCH=$(docker inspect "${IMAGE_TAG}" --format='{{.Architecture}}' 2>/dev/null || echo "unknown")
+            echo "📦 Image architecture: ${IMAGE_ARCH}"
+            
+            if [ "${IMAGE_ARCH}" != "arm64" ] && [ "${IMAGE_ARCH}" != "aarch64" ]; then
+                echo "❌ Image is not ARM64 (got ${IMAGE_ARCH})"
+                exit 1
+            fi
+            echo "✅ Image architecture verified: ARM64"
+            
+            # Test PHP version
+            echo "Testing PHP version..."
+            docker run --rm --platform ${TARGET_PLATFORM} -e APP_ENV=testing "${IMAGE_TAG}" php -v || {
+                echo "❌ PHP version check failed"
+                exit 1
+            }
+            
+            # Test PHP extensions
+            echo "Testing PHP extensions..."
+            docker run --rm --platform ${TARGET_PLATFORM} "${IMAGE_TAG}" php -m > /tmp/phpm.txt || {
+                echo "❌ Failed to list PHP modules"
+                exit 1
+            }
+            
+            # Required extensions
+            REQUIRED_EXTENSIONS="intl gd imagick pdo_mysql bcmath gmp exif zip"
+            MISSING_EXTENSIONS=""
+            
+            for ext in ${REQUIRED_EXTENSIONS}; do
+                if ! grep -qiE "^${ext}$" /tmp/phpm.txt; then
+                    if [ -z "${MISSING_EXTENSIONS}" ]; then
+                        MISSING_EXTENSIONS="${ext}"
+                    else
+                        MISSING_EXTENSIONS="${MISSING_EXTENSIONS} ${ext}"
                     fi
-                done
-                
-                if [ -n "${MISSING_EXTENSIONS}" ]; then
-                    echo "❌ Missing required PHP extensions: ${MISSING_EXTENSIONS}"
-                    exit 1
                 fi
-                
-                echo "✅ All required PHP extensions are present"
-                echo "✅ ARM64 image testing completed successfully"
-                
-                # Cleanup test image
-                docker rmi "${IMAGE_TAG}" 2>/dev/null || true
-            '''
-        }
+            done
+            
+            if [ -n "${MISSING_EXTENSIONS}" ]; then
+                echo "❌ Missing required PHP extensions: ${MISSING_EXTENSIONS}"
+                exit 1
+            fi
+            
+            echo "✅ All required PHP extensions are present"
+            echo "✅ ARM64 image testing completed successfully"
+            
+            # Cleanup test image
+            docker rmi "${IMAGE_TAG}" 2>/dev/null || true
+        '''
     }
 
     stages {
@@ -751,25 +737,25 @@ pipeline {
             }
         }
     }
-}
+    }
 
-// Function to deploy to server
-def deployToServer() {
-    return '''
-        ssh -i "$SSH_KEY" \\
-            -o StrictHostKeyChecking=no \\
-            -o ConnectTimeout=${SSH_TIMEOUT} \\
-            "$SSH_USER@${DEPLOY_HOST}" \\
-            "REGISTRY='${REGISTRY}' \\
-             IMAGE_NAME='${IMAGE_NAME}' \\
-             IMAGE_TAG='${IMAGE_TAG}' \\
-             TARGET_PLATFORM='${TARGET_PLATFORM}' \\
-             DEPLOY_PATH='${DEPLOY_PATH}' \\
-             BACKUP_PATH='${BACKUP_PATH}' \\
-             DB_HEALTH_CHECK_TIMEOUT='${DB_HEALTH_CHECK_TIMEOUT}' \\
-             APP_HEALTH_CHECK_TIMEOUT='${APP_HEALTH_CHECK_TIMEOUT}' \\
-             FORCE_DEPLOY='${params.FORCE_DEPLOY}' \\
-             bash -s" << 'DEPLOY_SCRIPT'
+    // Function to deploy to server
+    def deployToServer() {
+        return '''
+            ssh -i "$SSH_KEY" \\
+                -o StrictHostKeyChecking=no \\
+                -o ConnectTimeout=${SSH_TIMEOUT} \\
+                "$SSH_USER@${DEPLOY_HOST}" \\
+                "REGISTRY='${REGISTRY}' \\
+                 IMAGE_NAME='${IMAGE_NAME}' \\
+                 IMAGE_TAG='${IMAGE_TAG}' \\
+                 TARGET_PLATFORM='${TARGET_PLATFORM}' \\
+                 DEPLOY_PATH='${DEPLOY_PATH}' \\
+                 BACKUP_PATH='${BACKUP_PATH}' \\
+                 DB_HEALTH_CHECK_TIMEOUT='${DB_HEALTH_CHECK_TIMEOUT}' \\
+                 APP_HEALTH_CHECK_TIMEOUT='${APP_HEALTH_CHECK_TIMEOUT}' \\
+                 FORCE_DEPLOY='${params.FORCE_DEPLOY}' \\
+                 bash -s" << 'DEPLOY_SCRIPT'
 #!/bin/bash
 set -euxo pipefail
 
@@ -954,5 +940,5 @@ docker image prune -f || true
 # Logout from Docker
 docker logout "${REGISTRY}" || true
 DEPLOY_SCRIPT
-    '''
-}
+        '''
+    }
