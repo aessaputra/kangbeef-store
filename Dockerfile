@@ -88,7 +88,8 @@ RUN a2enmod rewrite headers expires remoteip
 COPY docker/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
 RUN sed -i 's/Listen 80/Listen 8080/g' /etc/apache2/ports.conf \
   && echo "ServerName localhost" >> /etc/apache2/apache2.conf \
-  && echo "ErrorLog /proc/self/fd/2" >> /etc/apache2/apache2.conf \
+  && echo "ErrorLog /var/log/apache2/error.log" >> /etc/apache2/apache2.conf \
+  && echo "CustomLog /var/log/apache2/access.log combined" >> /etc/apache2/apache2.conf \
   && a2ensite 000-default \
   && mkdir -p /var/log/apache2 \
   && chown -R www-data:www-data /var/log/apache2 \
