@@ -95,7 +95,7 @@ jobs:
         run: php artisan migrate --force
 
       - name: Run tests
-        run: php artisan test --verbose
+        run: vendor/bin/phpunit --verbose
 
   deploy:
     needs: test
