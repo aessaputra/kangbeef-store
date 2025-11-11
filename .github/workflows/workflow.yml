@@ -66,7 +66,7 @@ jobs:
           ini-values: |
             memory_limit=4G
             max_execution_time=360
-            date.timezone=Asia/Singapore
+            date.timezone=Asia/Jakarta
             pcov.enabled=1
             pcov.directory=./coverage
             pcov.exclude="~vendor~,~tests~"
@@ -151,9 +151,9 @@ jobs:
           echo "Verifying test setup..."
           
           # Check Laravel environment
-          php artisan env --key=APP_ENV
-          php artisan env --key=DB_CONNECTION
-          php artisan env --key=DB_DATABASE
+          php artisan env:APP_ENV
+          php artisan env:DB_CONNECTION
+          php artisan env:DB_DATABASE
           
           # Test database connection from Laravel
           php artisan tinker --execute="echo 'Laravel database connection: ' . DB::connection()->getDatabaseName();"
