@@ -96,4 +96,5 @@ jobs:
               echo "ERROR: deploy script not found or not executable at ${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
               exit 1
             fi
-            sudo -E "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" "$TIMESTAMP" "${GITHUB_REF#refs/heads/}"
+            # NOTE: we pass branch name using github.ref_name (expanded by Actions runner)
+            sudo -E "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" "$TIMESTAMP" "${{ github.ref_name }}"
