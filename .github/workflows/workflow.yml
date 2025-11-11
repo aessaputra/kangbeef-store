@@ -16,8 +16,18 @@ jobs:
         image: mysql:8.0
         env:
           MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: bagisto_test
-        options: --health-cmd="mysqladmin ping --silent" --health-interval=5s --health-timeout=2s --health-retries=3
+          MYSQL_DATABASE: kangbeef_test
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=2s
+          --health-retries=30
+      redis:
+        image: redis:6.2-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=5s --health-timeout=2s --health-retries=12
+
     steps:
       - uses: actions/checkout@v4
 
@@ -36,17 +46,40 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install composer deps
-        run: composer install --no-interaction --no-suggest --prefer-dist
-
       - name: Copy CI env
-        run: cp .env.ci .env || true
-
-      - name: Generate key & run tests
         run: |
-          php artisan key:generate || true
-          php artisan migrate --force || true
-          php artisan test || true
+          cp .env.ci .env
+          # ensure DB host/port for runner (runner connects to service via localhost)
+          php -r "file_put_contents('.env', preg_replace(['/DB_HOST=.*/','/DB_PORT=.*/'], ['DB_HOST=127.0.0.1','DB_PORT=3306'], file_get_contents('.env')));"
+          cat .env
+
+      - name: Install composer deps
+        run: composer install --no-interaction --no-suggest --prefer-dist --optimize-autoloader
+
+      - name: Wait for MySQL to be ready
+        run: |
+          echo "Waiting for MySQL to be ready (up to ~90s)..."
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+              echo "MySQL is up!"
+              break
+            fi
+            echo "MySQL not ready yet ($i/30). Sleeping 3s..."
+            sleep 3
+          done
+          mysql -h 127.0.0.1 -uroot -proot -e "SELECT VERSION();" || true
+
+      - name: Generate APP_KEY (persist to .env)
+        run: |
+          php artisan key:generate --force
+          echo "APP_KEY generated and saved in .env"
+          grep APP_KEY .env || true
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Run tests
+        run: php artisan test --verbose
 
   deploy:
     needs: test
