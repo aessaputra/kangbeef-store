@@ -165,9 +165,9 @@ jobs:
           echo "🧪 Running Pest tests..."
           
           # Run tests with better error handling
-          ./vendor/bin/pest --colors=always --coverage-clover=coverage.xml --verbose || {
+          ./vendor/bin/pest --colors=always --coverage-clover=coverage.xml -v || {
             echo "❌ Tests failed!"
-            echo "📊 Uploading coverage for passed tests..."
+            echo "📊 Tests failed - no coverage to upload"
             exit 1
           }
           
@@ -199,13 +199,14 @@ jobs:
           fi
           
       - name: Upload coverage reports to Codecov
-        if: always() && github.event_name == 'push'
+        if: success() && github.event_name == 'push'
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
           fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
           
       - name: Upload Test Results
         if: always()
@@ -213,9 +214,9 @@ jobs:
         with:
           name: pest-results-${{ matrix.php-version }}-${{ github.run_number }}
           path: |
-            ./coverage.xml
             ./storage/logs/
           retention-days: 30
+          if-no-files-found: warn
           
       - name: Test Summary
         if: always()
