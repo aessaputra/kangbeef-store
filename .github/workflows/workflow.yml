@@ -150,10 +150,10 @@ jobs:
         run: |
           echo "Verifying test setup..."
           
-          # Check Laravel environment
-          php artisan env:APP_ENV
-          php artisan env:DB_CONNECTION
-          php artisan env:DB_DATABASE
+          # Check Laravel environment using correct command
+          echo "APP_ENV: $(php artisan env --key=APP_ENV)"
+          echo "DB_CONNECTION: $(php artisan env --key=DB_CONNECTION)"
+          echo "DB_DATABASE: $(php artisan env --key=DB_DATABASE)"
           
           # Test database connection from Laravel
           php artisan tinker --execute="echo 'Laravel database connection: ' . DB::connection()->getDatabaseName();"
