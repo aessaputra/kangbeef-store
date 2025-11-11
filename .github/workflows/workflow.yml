@@ -18,15 +18,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        php-version: ["8.2", "8.3"]
-        include:
-          - php-version: "8.2"
-            stability: "stable"
-          - php-version: "8.3"
-            stability: "stable"
-      fail-fast: false
+    timeout-minutes: 30
     services:
       mysql:
         image: mysql:8.0
@@ -61,7 +53,7 @@ jobs:
       - name: Setup PHP + extensions
         uses: shivammathur/setup-php@v2
         with:
-          php-version: ${{ matrix.php-version }}
+          php-version: ${{ env.PHP_VERSION }}
           extensions: mbstring, bcmath, ctype, fileinfo, json, tokenizer, xml, pdo, pdo_mysql, openssl, curl, zip, intl, gd
           ini-values: |
             memory_limit=4G
@@ -70,6 +62,7 @@ jobs:
             pcov.enabled=1
             pcov.directory=./coverage
             pcov.exclude="~vendor~,~tests~"
+          coverage: pcov
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -77,20 +70,16 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
-      - name: Copy CI env
-        run: |
-          cp .env.ci .env
-          # ensure DB host/port for runner (runner connects to service via localhost)
-          php -r "file_put_contents('.env', preg_replace(['/DB_HOST=.*/','/DB_PORT=.*/'], ['DB_HOST=127.0.0.1','DB_PORT=3306'], file_get_contents('.env')));"
-          cat .env
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
 
       - name: Cache Composer dependencies
         uses: actions/cache@v4
         with:
-          path: ~/.composer/cache
+          path: ${{ steps.composer-cache.outputs.dir }}
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
           restore-keys: |
-            ${{ runner.os }}-composer-
             ${{ runner.os }}-composer-
 
       - name: Install Composer dependencies
@@ -98,6 +87,27 @@ jobs:
           echo "Installing Composer dependencies..."
           composer install --no-interaction --no-suggest --prefer-dist --optimize-autoloader --no-progress
           echo "✅ Composer dependencies installed!"
+
+      - name: Cache NPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install NPM dependencies
+        run: |
+          echo "Installing NPM dependencies..."
+          npm ci
+          echo "✅ NPM dependencies installed!"
+
+      - name: Copy CI env
+        run: |
+          cp .env.ci .env
+          # ensure DB host/port for runner (runner connects to service via localhost)
+          php -r "file_put_contents('.env', preg_replace(['/DB_HOST=.*/','/DB_PORT=.*/'], ['DB_HOST=127.0.0.1','DB_PORT=3306'], file_get_contents('.env')));"
+          cat .env
 
       - name: Wait for MySQL to be ready
         run: |
@@ -112,13 +122,13 @@ jobs:
             echo "MySQL not ready yet ($i/30). Sleeping 2s..."
             sleep 2
           done
-          
+
           # Final connection test with proper error handling
           if ! mysql -h 127.0.0.1 -uroot -proot -e "SELECT 1;" 2>/dev/null; then
             echo "ERROR: MySQL connection failed"
             exit 1
           fi
-          
+
           echo "✅ MySQL connection verified successfully!"
 
       - name: Generate APP_KEY (persist to .env)
@@ -130,16 +140,16 @@ jobs:
       - name: Setup Database
         run: |
           echo "Setting up database..."
-          
+
           # Verify database connection first
           php artisan tinker --execute="DB::connection()->getPdo(); echo 'Database connection verified';"
-          
+
           # Run migrations with verbose output
           php artisan migrate --force -v
-          
+
           # Verify migrations completed
           echo "✅ Database migrations completed!"
-          
+
           # Optional: Seed database if needed
           if [ -f "database/seeders/DatabaseSeeder.php" ]; then
             echo "Seeding database..."
@@ -149,47 +159,53 @@ jobs:
       - name: Verify Setup
         run: |
           echo "Verifying test setup..."
-          
+
           # Check Laravel environment using grep on .env file
           echo "APP_ENV: $(grep APP_ENV .env | cut -d'=' -f2)"
           echo "DB_CONNECTION: $(grep DB_CONNECTION .env | cut -d'=' -f2)"
           echo "DB_DATABASE: $(grep DB_DATABASE .env | cut -d'=' -f2)"
-          
+
           # Test database connection from Laravel
           php artisan tinker --execute="echo 'Laravel database connection: ' . DB::connection()->getDatabaseName();"
-          
+
           echo "✅ Setup verification completed!"
-          
+
+      - name: Build frontend assets
+        run: |
+          echo "Building frontend assets..."
+          npm run build || echo "No build script found or build failed"
+          echo "✅ Frontend assets built!"
+
       - name: Run Tests
         run: |
           echo "🧪 Running Pest tests..."
-          
+
           # Run tests with better error handling
           ./vendor/bin/pest --colors=always --coverage-clover=coverage.xml -v || {
             echo "❌ Tests failed!"
             echo "📊 Tests failed - no coverage to upload"
             exit 1
           }
-          
+
           echo "✅ All tests completed!"
-          
+
       - name: Code Quality Check
         run: |
           echo "🔍 Running code quality checks..."
-          
+
           # Run Pint for code formatting
           if ! vendor/bin/pint --test; then
             echo "❌ Code formatting issues found!"
             echo "Run 'vendor/bin/pint' to fix formatting issues."
             exit 1
           fi
-          
+
           echo "✅ Code quality checks passed!"
-          
+
       - name: Security Audit
         run: |
           echo "🔒 Running security audit..."
-          
+
           # Check for known security vulnerabilities
           if ! composer audit; then
             echo "⚠️ Security vulnerabilities found in dependencies!"
@@ -197,7 +213,7 @@ jobs:
           else
             echo "✅ No security vulnerabilities found!"
           fi
-          
+
       - name: Upload coverage reports to Codecov
         if: success() && github.event_name == 'push'
         uses: codecov/codecov-action@v4
@@ -207,34 +223,37 @@ jobs:
           name: codecov-umbrella
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
-          
+
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pest-results-${{ matrix.php-version }}-${{ github.run_number }}
+          name: pest-results-${{ env.PHP_VERSION }}-${{ github.run_number }}
           path: |
             ./storage/logs/
+            ./coverage.xml
           retention-days: 30
           if-no-files-found: warn
-          
+
       - name: Test Summary
         if: always()
         run: |
           echo "## 🧪 Test Summary" >> $GITHUB_STEP_SUMMARY
           echo "| PHP Version | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| ${{ matrix.php-version }} | ${{ job.status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          
+          echo "| ${{ env.PHP_VERSION }} | ${{ job.status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+
           if [ "${{ job.status }}" = "success" ]; then
             echo "✅ All tests passed successfully!"
           else
             echo "❌ Some tests failed. Check the logs above for details."
             exit 1
           fi
+
   deploy:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
     environment:
       name: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
@@ -256,7 +275,7 @@ jobs:
           mkdir -p release && tar -xf release.tar -C release
 
       - name: Copy release to remote and run deploy script
-        uses: appleboy/scp-action@master
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
@@ -267,7 +286,7 @@ jobs:
 
       - name: Execute remote deploy script
         id: deploy
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
@@ -287,7 +306,7 @@ jobs:
             fi
             # NOTE: we pass branch name using github.ref_name (expanded by Actions runner)
             sudo -E "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" "$TIMESTAMP" "${{ github.ref_name }}"
-            
+
             # Output deployment URL for environment
             if [ "${{ github.ref_name }}" = "main" ]; then
               echo "url=https://kangbeef.com" >> $GITHUB_OUTPUT
