@@ -3,10 +3,17 @@ name: Kangbeef CI/CD
 on:
   push:
     branches: ["main", "dev"]
+  pull_request:
+    branches: ["main", "dev"]
 
 env:
   PHP_VERSION: "8.3"
   NODE_VERSION: "20"
+
+# Concurrency to prevent multiple runs of the same workflow
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -33,7 +40,10 @@ jobs:
         options: --health-cmd="redis-cli ping" --health-interval=5s --health-timeout=2s --health-retries=12
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Setup PHP + extensions
         uses: shivammathur/setup-php@v2
@@ -49,6 +59,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
 
       - name: Copy CI env
         run: |
@@ -57,7 +68,15 @@ jobs:
           php -r "file_put_contents('.env', preg_replace(['/DB_HOST=.*/','/DB_PORT=.*/'], ['DB_HOST=127.0.0.1','DB_PORT=3306'], file_get_contents('.env')));"
           cat .env
 
-      - name: Install composer deps
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: Install Composer dependencies
         run: composer install --no-interaction --no-suggest --prefer-dist --optimize-autoloader
 
       - name: Wait for MySQL to be ready
@@ -86,22 +105,29 @@ jobs:
           echo "APP_KEY generated and saved in .env"
           grep APP_KEY .env || true
 
-      - name: Test database connection
-        run: |
-          echo "Testing database connection with PHP..."
-          php test-db-connection.php
-          
       - name: Run migrations
         run: php artisan migrate --force
 
       - name: Run tests
-        run: ./vendor/bin/pest --colors=always
+        run: ./vendor/bin/pest --colors=always --coverage-clover=coverage.xml
+
+      - name: Upload coverage reports to Codecov
+        if: github.event_name == 'push'
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
   deploy:
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+      url: ${{ steps.deploy.outputs.url }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -126,6 +152,7 @@ jobs:
           target: "${{ secrets.REMOTE_TMP_DIR }}/repo_release"
 
       - name: Execute remote deploy script
+        id: deploy
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -146,3 +173,10 @@ jobs:
             fi
             # NOTE: we pass branch name using github.ref_name (expanded by Actions runner)
             sudo -E "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" "$TIMESTAMP" "${{ github.ref_name }}"
+            
+            # Output deployment URL for environment
+            if [ "${{ github.ref_name }}" = "main" ]; then
+              echo "url=https://kangbeef.com" >> $GITHUB_OUTPUT
+            else
+              echo "url=https://staging.kangbeef.com" >> $GITHUB_OUTPUT
+            fi
