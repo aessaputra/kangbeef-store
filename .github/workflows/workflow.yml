@@ -18,6 +18,15 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php-version: ["8.2", "8.3"]
+        include:
+          - php-version: "8.2"
+            stability: "stable"
+          - php-version: "8.3"
+            stability: "stable"
+      fail-fast: false
     services:
       mysql:
         image: mysql:8.0
@@ -28,16 +37,20 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h localhost"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=5s
+          --health-timeout=10s
+          --health-retries=20
           --name=mysql_ci
       redis:
         image: redis:6.2-alpine
         ports:
           - 6379:6379
-        options: --health-cmd="redis-cli ping" --health-interval=5s --health-timeout=2s --health-retries=12
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=2s
+          --health-retries=12
 
     steps:
       - name: Checkout repository
@@ -48,12 +61,15 @@ jobs:
       - name: Setup PHP + extensions
         uses: shivammathur/setup-php@v2
         with:
-          php-version: ${{ env.PHP_VERSION }}
+          php-version: ${{ matrix.php-version }}
           extensions: mbstring, bcmath, ctype, fileinfo, json, tokenizer, xml, pdo, pdo_mysql, openssl, curl, zip, intl, gd
           ini-values: |
             memory_limit=4G
             max_execution_time=360
             date.timezone=Asia/Singapore
+            pcov.enabled=1
+            pcov.directory=./coverage
+            pcov.exclude="~vendor~,~tests~"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -75,29 +91,35 @@ jobs:
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
           restore-keys: |
             ${{ runner.os }}-composer-
+            ${{ runner.os }}-composer-
 
       - name: Install Composer dependencies
-        run: composer install --no-interaction --no-suggest --prefer-dist --optimize-autoloader
+        run: |
+          echo "Installing Composer dependencies..."
+          composer install --no-interaction --no-suggest --prefer-dist --optimize-autoloader --no-progress
+          echo "✅ Composer dependencies installed!"
 
       - name: Wait for MySQL to be ready
         run: |
           echo "Waiting for MySQL to be ready (up to ~120s)..."
-          for i in $(seq 1 24); do
+          for i in $(seq 1 30); do
             if mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
-              echo "MySQL is up!"
+              echo "MySQL is up after $i attempts!"
               mysql -h 127.0.0.1 -uroot -proot -e "SHOW DATABASES;"
-              mysql -h 127.0.0.1 -uroot -proot -e "USE kangbeef_test; SHOW TABLES;"
+              mysql -h 127.0.0.1 -uroot -proot -e "USE kangbeef_test; SHOW TABLES;" || echo "No tables found - expected for fresh database"
               break
             fi
-            echo "MySQL not ready yet ($i/24). Sleeping 5s..."
-            sleep 5
+            echo "MySQL not ready yet ($i/30). Sleeping 2s..."
+            sleep 2
           done
           
-          # Final connection test
-          if ! mysql -h 127.0.0.1 -uroot -proot -e "SELECT 1;"; then
+          # Final connection test with proper error handling
+          if ! mysql -h 127.0.0.1 -uroot -proot -e "SELECT 1;" 2>/dev/null; then
             echo "ERROR: MySQL connection failed"
             exit 1
           fi
+          
+          echo "✅ MySQL connection verified successfully!"
 
       - name: Generate APP_KEY (persist to .env)
         run: |
@@ -105,19 +127,110 @@ jobs:
           echo "APP_KEY generated and saved in .env"
           grep APP_KEY .env || true
 
-      - name: Run migrations
-        run: php artisan migrate --force
+      - name: Setup Database
+        run: |
+          echo "Setting up database..."
+          
+          # Verify database connection first
+          php artisan tinker --execute="DB::connection()->getPdo(); echo 'Database connection verified';"
+          
+          # Run migrations with verbose output
+          php artisan migrate --force -v
+          
+          # Verify migrations completed
+          echo "✅ Database migrations completed!"
+          
+          # Optional: Seed database if needed
+          if [ -f "database/seeders/DatabaseSeeder.php" ]; then
+            echo "Seeding database..."
+            php artisan db:seed --class=DatabaseSeeder --force || echo "No seeders found or seeding failed"
+          fi
 
-      - name: Run tests
-        run: ./vendor/bin/pest --colors=always --coverage-clover=coverage.xml
-
+      - name: Verify Setup
+        run: |
+          echo "Verifying test setup..."
+          
+          # Check Laravel environment
+          php artisan env --key=APP_ENV
+          php artisan env --key=DB_CONNECTION
+          php artisan env --key=DB_DATABASE
+          
+          # Test database connection from Laravel
+          php artisan tinker --execute="echo 'Laravel database connection: ' . DB::connection()->getDatabaseName();"
+          
+          echo "✅ Setup verification completed!"
+          
+      - name: Run Tests
+        run: |
+          echo "🧪 Running Pest tests..."
+          
+          # Run tests with better error handling
+          ./vendor/bin/pest --colors=always --coverage-clover=coverage.xml --verbose || {
+            echo "❌ Tests failed!"
+            echo "📊 Uploading coverage for passed tests..."
+            exit 1
+          }
+          
+          echo "✅ All tests completed!"
+          
+      - name: Code Quality Check
+        run: |
+          echo "🔍 Running code quality checks..."
+          
+          # Run Pint for code formatting
+          if ! vendor/bin/pint --test; then
+            echo "❌ Code formatting issues found!"
+            echo "Run 'vendor/bin/pint' to fix formatting issues."
+            exit 1
+          fi
+          
+          echo "✅ Code quality checks passed!"
+          
+      - name: Security Audit
+        run: |
+          echo "🔒 Running security audit..."
+          
+          # Check for known security vulnerabilities
+          if ! composer audit; then
+            echo "⚠️ Security vulnerabilities found in dependencies!"
+            echo "Please review and update vulnerable packages."
+          else
+            echo "✅ No security vulnerabilities found!"
+          fi
+          
       - name: Upload coverage reports to Codecov
-        if: github.event_name == 'push'
+        if: always() && github.event_name == 'push'
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
+          fail_ci_if_error: false
+          
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pest-results-${{ matrix.php-version }}-${{ github.run_number }}
+          path: |
+            ./coverage.xml
+            ./storage/logs/
+          retention-days: 30
+          
+      - name: Test Summary
+        if: always()
+        run: |
+          echo "## 🧪 Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| PHP Version | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ${{ matrix.php-version }} | ${{ job.status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ All tests passed successfully!"
+          else
+            echo "❌ Some tests failed. Check the logs above for details."
+            exit 1
+          fi
   deploy:
     needs: test
     runs-on: ubuntu-latest
