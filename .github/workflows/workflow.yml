@@ -102,6 +102,12 @@ jobs:
           npm ci
           echo "✅ NPM dependencies installed!"
 
+      - name: Install Playwright browsers
+        run: |
+          echo "Installing Playwright browsers..."
+          npx playwright install --with-deps
+          echo "✅ Playwright browsers installed!"
+
       - name: Copy CI env
         run: |
           cp .env.ci .env
@@ -176,22 +182,9 @@ jobs:
           npm run build || echo "No build script found or build failed"
           echo "✅ Frontend assets built!"
 
-      - name: Run Tests
+      - name: Run Pint Tests (Code Formatting)
         run: |
-          echo "🧪 Running Pest tests..."
-
-          # Run tests with better error handling
-          ./vendor/bin/pest --colors=always --coverage-clover=coverage.xml -v || {
-            echo "❌ Tests failed!"
-            echo "📊 Tests failed - no coverage to upload"
-            exit 1
-          }
-
-          echo "✅ All tests completed!"
-
-      - name: Code Quality Check
-        run: |
-          echo "🔍 Running code quality checks..."
+          echo "🔍 Running Pint code formatting checks..."
 
           # Run Pint for code formatting
           if ! vendor/bin/pint --test; then
@@ -200,7 +193,40 @@ jobs:
             exit 1
           fi
 
-          echo "✅ Code quality checks passed!"
+          echo "✅ Pint code formatting checks passed!"
+
+      - name: Run Pest Tests (Unit/Feature Tests)
+        run: |
+          echo "🧪 Running Pest tests..."
+
+          # Run tests with better error handling
+          php artisan test --coverage || {
+            echo "❌ Pest tests failed!"
+            echo "📊 Tests failed - no coverage to upload"
+            exit 1
+          }
+
+          echo "✅ All Pest tests completed!"
+
+      - name: Run Playwright Tests (Shop E2E Tests)
+        run: |
+          echo "🎭 Running Shop Playwright E2E tests..."
+          cd packages/Webkul/Shop
+          npx playwright test --config=tests/e2e-pw/playwright.config.ts || {
+            echo "❌ Shop Playwright tests failed!"
+            exit 1
+          }
+          echo "✅ Shop Playwright tests completed!"
+
+      - name: Run Playwright Tests (Admin E2E Tests)
+        run: |
+          echo "🎭 Running Admin Playwright E2E tests..."
+          cd packages/Webkul/Admin
+          npx playwright test --config=tests/e2e-pw/playwright.config.ts || {
+            echo "❌ Admin Playwright tests failed!"
+            exit 1
+          }
+          echo "✅ Admin Playwright tests completed!"
 
       - name: Security Audit
         run: |
@@ -216,22 +242,20 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         if: success() && github.event_name == 'push'
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          file: ./coverage.xml
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pest-results-${{ env.PHP_VERSION }}-${{ github.run_number }}
+          name: test-results-${{ env.PHP_VERSION }}-${{ github.run_number }}
           path: |
             ./storage/logs/
             ./coverage.xml
+            ./packages/Webkul/Shop/playwright-report/
+            ./packages/Webkul/Admin/playwright-report/
           retention-days: 30
           if-no-files-found: warn
 
@@ -239,9 +263,11 @@ jobs:
         if: always()
         run: |
           echo "## 🧪 Test Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| PHP Version | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| ${{ env.PHP_VERSION }} | ${{ job.status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Type | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Pint (Code Formatting) | ${{ job.status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Pest (Unit/Feature) | ${{ job.status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Playwright (E2E) | ${{ job.status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ job.status }}" = "success" ]; then
             echo "✅ All tests passed successfully!"
