@@ -95,7 +95,7 @@ jobs:
         run: php artisan migrate --force
 
       - name: Run tests
-        run: vendor/bin/phpunit
+        run: ./vendor/bin/pest --colors=always
   deploy:
     needs: test
     runs-on: ubuntu-latest
