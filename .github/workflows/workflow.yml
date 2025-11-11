@@ -148,10 +148,16 @@ jobs:
           echo "Setting up database..."
 
           # Verify database connection first
-          php artisan tinker --execute="DB::connection()->getPdo(); echo 'Database connection verified';"
+          php artisan tinker --execute="DB::connection()->getPdo(); echo 'Database connection verified';" || {
+            echo "❌ Database connection failed!"
+            exit 1
+          }
 
           # Run migrations with verbose output
-          php artisan migrate --force -v
+          php artisan migrate --force -v || {
+            echo "❌ Database migrations failed!"
+            exit 1
+          }
 
           # Verify migrations completed
           echo "✅ Database migrations completed!"
@@ -199,10 +205,11 @@ jobs:
         run: |
           echo "🧪 Running Pest tests..."
 
-          # Run tests with better error handling
-          php artisan test --coverage || {
+          # Run tests with better error handling and verbose output
+          php artisan test --coverage --verbose || {
             echo "❌ Pest tests failed!"
             echo "📊 Tests failed - no coverage to upload"
+            echo "Check logs above for detailed error information"
             exit 1
           }
 
