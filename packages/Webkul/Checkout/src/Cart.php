@@ -950,7 +950,7 @@ class Cart
                     $itemBasePrice = $item->base_price;
                 }
 
-                $basePrice = !is_null($item->custom_price) ? $item->custom_price : $itemBasePrice;
+                $basePrice = ! is_null($item->custom_price) ? $item->custom_price : $itemBasePrice;
 
                 $price = core()->convertPrice($basePrice);
 
