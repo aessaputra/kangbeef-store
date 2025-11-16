@@ -216,7 +216,7 @@ jobs:
           echo "🧪 Running Pest tests..."
 
           # Run tests with better error handling and verbose output
-          php artisan test --coverage --verbose || {
+          php artisan test --coverage || {
             echo "❌ Pest tests failed!"
             echo "📊 Tests failed - no coverage to upload"
             echo "Check logs above for detailed error information"
