@@ -170,11 +170,18 @@ class SystemConfig
                     'code'         => $field,
                     'channel_code' => $channel,
                     'locale_code'  => $locale,
+                ]) ?? $this->coreConfigRepository->findOneWhere([
+                    'code'         => $field,
+                    'channel_code' => null,
+                    'locale_code'  => $locale,
                 ]);
             } else {
                 $coreConfigValue = $this->coreConfigRepository->findOneWhere([
                     'code'         => $field,
                     'channel_code' => $channel,
+                ]) ?? $this->coreConfigRepository->findOneWhere([
+                    'code'         => $field,
+                    'channel_code' => null,
                 ]);
             }
         } else {

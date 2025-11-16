@@ -413,7 +413,27 @@ class ProductRepository extends Repository
 
                 if ($attribute) {
                     if ($attribute->code === 'price') {
-                        $qb->orderBy('product_price_indices.min_price', $sortOptions['order']);
+                        $priceAlias = 'sort_price_pav';
+
+                        $qb->leftJoin('product_attribute_values as '.$priceAlias, function ($join) use ($priceAlias, $attribute) {
+                            $join->on('products.id', '=', $priceAlias.'.product_id')
+                                ->where($priceAlias.'.attribute_id', $attribute->id);
+
+                            if ($attribute->value_per_channel) {
+                                if ($attribute->value_per_locale) {
+                                    $join->where($priceAlias.'.channel', core()->getRequestedChannelCode())
+                                        ->where($priceAlias.'.locale', core()->getRequestedLocaleCode());
+                                } else {
+                                    $join->where($priceAlias.'.channel', core()->getRequestedChannelCode());
+                                }
+                            } else {
+                                if ($attribute->value_per_locale) {
+                                    $join->where($priceAlias.'.locale', core()->getRequestedLocaleCode());
+                                }
+                            }
+                        });
+
+                        $qb->orderBy(DB::raw('COALESCE('.$prefix.'product_price_indices.min_price, '.$prefix.'product_price_indices.regular_min_price, '.$prefix.$priceAlias.'.float_value)'), $sortOptions['order']);
                     } else {
                         $alias = 'sort_product_attribute_values';
 

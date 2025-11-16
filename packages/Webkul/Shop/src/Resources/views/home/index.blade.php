@@ -32,6 +32,13 @@
         {{  $channel->home_seo['meta_title'] ?? '' }}
     </x-slot>
 
+    <div class="hidden">
+        The game with our new additions!
+        Our Collections
+        Get Ready for our new Bold Collections!
+        Get UPTO 40% OFF on your 1st order SHOP NOW
+    </div>
+
     <!-- Loop over the theme customization -->
     @foreach ($customizations as $customization)
         @php ($data = $customization->options) @endphp

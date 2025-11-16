@@ -166,16 +166,26 @@ class CartController extends APIController
 
         $cart = Cart::getCart();
 
-        $address = (new CartAddress)->fill([
-            'country'  => request()->input('country'),
-            'state'    => request()->input('state'),
-            'postcode' => request()->input('postcode'),
-            'cart_id'  => $cart->id,
+        $billing = (new CartAddress)->fill([
+            'country'       => request()->input('country'),
+            'state'         => request()->input('state'),
+            'postcode'      => request()->input('postcode'),
+            'cart_id'       => $cart->id,
+            'address_type'  => CartAddress::ADDRESS_TYPE_BILLING,
+            'use_for_shipping' => true,
         ]);
 
-        $cart->setRelation('billing_address', $address);
+        $shipping = (new CartAddress)->fill([
+            'country'       => request()->input('country'),
+            'state'         => request()->input('state'),
+            'postcode'      => request()->input('postcode'),
+            'cart_id'       => $cart->id,
+            'address_type'  => CartAddress::ADDRESS_TYPE_SHIPPING,
+        ]);
 
-        $cart->setRelation('shipping_address', $address);
+        $cart->setRelation('billing_address', $billing);
+
+        $cart->setRelation('shipping_address', $shipping);
 
         Cart::setCart($cart);
 

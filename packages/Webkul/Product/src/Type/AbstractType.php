@@ -598,7 +598,13 @@ abstract class AbstractType
     public function getMinimalPrice()
     {
         if (! $priceIndex = $this->getPriceIndex()) {
-            return $this->product->price;
+            $price = $this->product->price;
+
+            if (! $price) {
+                $price = $this->getAttributeBasePrice();
+            }
+
+            return (float) $price;
         }
 
         return $priceIndex->min_price;
@@ -612,7 +618,13 @@ abstract class AbstractType
     public function getRegularMinimalPrice()
     {
         if (! $priceIndex = $this->getPriceIndex()) {
-            return $this->product->price;
+            $price = $this->product->price;
+
+            if (! $price) {
+                $price = $this->getAttributeBasePrice();
+            }
+
+            return (float) $price;
         }
 
         return $priceIndex->regular_min_price;
@@ -626,7 +638,13 @@ abstract class AbstractType
     public function getMaximumPrice()
     {
         if (! $priceIndex = $this->getPriceIndex()) {
-            return $this->product->price;
+            $price = $this->product->price;
+
+            if (! $price) {
+                $price = $this->getAttributeBasePrice();
+            }
+
+            return (float) $price;
         }
 
         return $priceIndex->max_price;
@@ -640,7 +658,13 @@ abstract class AbstractType
     public function getRegularMaximumPrice()
     {
         if (! $priceIndex = $this->getPriceIndex()) {
-            return $this->product->price;
+            $price = $this->product->price;
+
+            if (! $price) {
+                $price = $this->getAttributeBasePrice();
+            }
+
+            return (float) $price;
         }
 
         return $priceIndex->regular_max_price;
@@ -669,6 +693,37 @@ abstract class AbstractType
             ->setProduct($this->product);
 
         return $indexer->getMinimalPrice($qty);
+    }
+
+    protected function getAttributeBasePrice(): float
+    {
+        $attribute = $this->attributeRepository->findOneByField('code', 'price');
+
+        if (! $attribute) {
+            return 0.0;
+        }
+
+        $values = $this->attributeValueRepository->findWhere([
+            'product_id'   => $this->product->id,
+            'attribute_id' => $attribute->id,
+        ]);
+
+        if ($values->isEmpty()) {
+            return 0.0;
+        }
+
+        $value = $values->firstWhere('channel', core()->getRequestedChannelCode())
+            ?? $values->first();
+
+        $candidate = $value->float_value ?? $value->decimal_value ?? $value->integer_value ?? null;
+
+        if (! is_null($candidate)) {
+            return (float) $candidate;
+        }
+
+        $column = $attribute->column_name;
+
+        return (float) ($value->{$column} ?? 0.0);
     }
 
     /**
@@ -781,6 +836,10 @@ abstract class AbstractType
         }
 
         $price = $this->getFinalPrice();
+
+        if (! $price) {
+            $price = $this->getRegularMinimalPrice();
+        }
 
         $products = [
             [

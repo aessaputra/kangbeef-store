@@ -111,8 +111,7 @@ jobs:
       - name: Copy CI env
         run: |
           cp .env.ci .env
-          # ensure DB host/port for runner (runner connects to service via localhost)
-          php -r "file_put_contents('.env', preg_replace(['/DB_HOST=.*/','/DB_PORT=.*/'], ['DB_HOST=127.0.0.1','DB_PORT=3306'], file_get_contents('.env')));"
+          php -r "file_put_contents('.env', preg_replace(['/DB_HOST=.*/','/DB_PORT=.*/','/DB_PASSWORD=.*/','/BROADCAST_DRIVER=.*/','/REDIS_CLIENT=.*/'], ['DB_HOST=127.0.0.1','DB_PORT=3306','DB_PASSWORD=root','BROADCAST_DRIVER=log','REDIS_CLIENT=predis'], file_get_contents('.env')));"
           cat .env
 
       - name: Wait for MySQL to be ready
@@ -187,6 +186,17 @@ jobs:
           echo "Building frontend assets..."
           npm run build || echo "No build script found or build failed"
           echo "✅ Frontend assets built!"
+
+      - name: Start Laravel server
+        run: |
+          php -S 127.0.0.1:8000 -t public > /dev/null 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sSf http://127.0.0.1:8000 > /dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          php -r "file_put_contents('.env', preg_replace(['/APP_URL=.*/'], ['APP_URL=http://127.0.0.1:8000'], file_get_contents('.env')));"
 
       - name: Run Pint Tests (Code Formatting)
         run: |
