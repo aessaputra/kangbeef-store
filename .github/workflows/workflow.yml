@@ -102,11 +102,27 @@ jobs:
           npm ci
           echo "✅ NPM dependencies installed!"
 
-      - name: Install Playwright browsers
+      - name: Install NPM dependencies (Shop)
         run: |
-          echo "Installing Playwright browsers..."
-          npx playwright install --with-deps
-          echo "✅ Playwright browsers installed!"
+          echo "Installing NPM dependencies for Shop..."
+          npm ci --prefix packages/Webkul/Shop
+          echo "✅ Shop NPM dependencies installed!"
+
+      - name: Install NPM dependencies (Admin)
+        run: |
+          echo "Installing NPM dependencies for Admin..."
+          npm ci --prefix packages/Webkul/Admin
+          echo "✅ Admin NPM dependencies installed!"
+
+      - name: Install Playwright browsers (Shop & Admin)
+        run: |
+          echo "Installing Playwright browsers for Shop..."
+          npx -C packages/Webkul/Shop playwright install --with-deps
+          echo "✅ Playwright browsers installed for Shop!"
+
+          echo "Installing Playwright browsers for Admin..."
+          npx -C packages/Webkul/Admin playwright install --with-deps
+          echo "✅ Playwright browsers installed for Admin!"
 
       - name: Copy CI env
         run: |
