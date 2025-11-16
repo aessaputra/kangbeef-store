@@ -111,7 +111,7 @@ jobs:
       - name: Copy CI env
         run: |
           cp .env.ci .env
-          php -r "file_put_contents('.env', preg_replace(['/DB_HOST=.*/','/DB_PORT=.*/','/DB_PASSWORD=.*/','/BROADCAST_DRIVER=.*/','/REDIS_CLIENT=.*/'], ['DB_HOST=127.0.0.1','DB_PORT=3306','DB_PASSWORD=root','BROADCAST_DRIVER=log','REDIS_CLIENT=predis'], file_get_contents('.env')));"
+          php -r "file_put_contents('.env', preg_replace(['/DB_HOST=.*/','/DB_PORT=.*/','/DB_PASSWORD=.*/','/BROADCAST_DRIVER=.*/','/REDIS_CLIENT=.*/','/APP_CURRENCY=.*/'], ['DB_HOST=127.0.0.1','DB_PORT=3306','DB_PASSWORD=root','BROADCAST_DRIVER=log','REDIS_CLIENT=predis','APP_CURRENCY=USD'], file_get_contents('.env')));"
           cat .env
 
       - name: Wait for MySQL to be ready
