@@ -103,7 +103,7 @@ class Cart
             return;
         }
 
-        $cartTemp = new \stdClass;
+        $cartTemp = new \stdClass();
         $cartTemp->id = $this->cart->id;
 
         session()->put('cart', $cartTemp);
@@ -594,7 +594,7 @@ class Cart
             $cartPayment->delete();
         }
 
-        $cartPayment = new CartPayment;
+        $cartPayment = new CartPayment();
 
         $cartPayment->method = $params['method'];
         $cartPayment->method_title = core()->getConfigData('sales.payment_methods.'.$params['method'].'.title');
