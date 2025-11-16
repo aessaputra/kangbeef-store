@@ -111,7 +111,7 @@ class CartController extends APIController
         }
 
         return new JsonResource([
-            'data'     => new CartResource(Cart::getCart()) ?? null,
+            'data'     => Cart::getCart() ? new CartResource(Cart::getCart()) : null,
             'message'  => trans('shop::app.checkout.cart.index.remove-selected-success'),
         ]);
     }
@@ -128,7 +128,7 @@ class CartController extends APIController
         }
 
         return new JsonResource([
-            'data'     => new CartResource(Cart::getCart()) ?? null,
+            'data'     => Cart::getCart() ? new CartResource(Cart::getCart()) : null,
             'message'  => trans('shop::app.checkout.cart.index.move-to-wishlist-success'),
         ]);
     }
@@ -166,7 +166,7 @@ class CartController extends APIController
 
         $cart = Cart::getCart();
 
-        $billing = (new CartAddress)->fill([
+        $billing = (new CartAddress())->fill([
             'country'       => request()->input('country'),
             'state'         => request()->input('state'),
             'postcode'      => request()->input('postcode'),
@@ -175,7 +175,7 @@ class CartController extends APIController
             'use_for_shipping' => true,
         ]);
 
-        $shipping = (new CartAddress)->fill([
+        $shipping = (new CartAddress())->fill([
             'country'       => request()->input('country'),
             'state'         => request()->input('state'),
             'postcode'      => request()->input('postcode'),

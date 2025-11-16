@@ -61,7 +61,7 @@ jobs:
             date.timezone=Asia/Jakarta
             pcov.enabled=1
             pcov.directory=./coverage
-            pcov.exclude="~vendor~,~tests~"
+            pcov.exclude="~(vendor|tests)~"
           coverage: pcov
 
       - name: Setup Node

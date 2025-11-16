@@ -878,9 +878,9 @@ class Cart
         $this->cart->grand_total = $this->cart->sub_total + $this->cart->tax_total - $this->cart->discount_amount;
         $this->cart->base_grand_total = $this->cart->base_sub_total + $this->cart->base_tax_total - $this->cart->base_discount_amount;
 
-            if ($shipping = $this->cart->selected_shipping_rate) {
-                $this->cart->tax_total += $shipping->tax_amount;
-                $this->cart->base_tax_total += $shipping->base_tax_amount;
+        if ($shipping = $this->cart->selected_shipping_rate) {
+            $this->cart->tax_total += $shipping->tax_amount;
+            $this->cart->base_tax_total += $shipping->base_tax_amount;
 
             $this->cart->shipping_amount = $shipping->price;
             $this->cart->base_shipping_amount = $shipping->base_price;
@@ -891,16 +891,8 @@ class Cart
             $this->cart->grand_total = (float) $this->cart->grand_total + $shipping->tax_amount + $shipping->price - $shipping->discount_amount;
             $this->cart->base_grand_total = (float) $this->cart->base_grand_total + $shipping->base_tax_amount + $shipping->base_price - $shipping->base_discount_amount;
 
-                $this->cart->discount_amount += $shipping->discount_amount;
-                $this->cart->base_discount_amount += $shipping->base_discount_amount;
-            }
-
-        if (
-            $this->cart->tax_total == 0
-            && $this->cart->sub_total_incl_tax > $this->cart->sub_total
-        ) {
-            $this->cart->tax_total = $this->cart->sub_total_incl_tax - $this->cart->sub_total;
-            $this->cart->base_tax_total = $this->cart->base_sub_total_incl_tax - $this->cart->base_sub_total;
+            $this->cart->discount_amount += $shipping->discount_amount;
+            $this->cart->base_discount_amount += $shipping->base_discount_amount;
         }
 
         $this->cart->discount_amount = round($this->cart->discount_amount, 2);
@@ -1021,29 +1013,7 @@ class Cart
             }
 
             if (! $taxCategories[$taxCategoryId]) {
-                $fallbackRate = \Webkul\Tax\Models\TaxRate::query()
-                    ->where('country', $address->country)
-                    ->when(! empty($address->state), function ($q) use ($address) {
-                        $q->whereIn('state', ['*', $address->state]);
-                    })
-                    ->orderBy('tax_rate', 'desc')
-                    ->first();
-
-                if ($fallbackRate) {
-                    $fallbackMap = \Webkul\Tax\Models\TaxMap::query()
-                        ->where('tax_rate_id', $fallbackRate->id)
-                        ->first();
-
-                    if ($fallbackMap) {
-                        $taxCategoryId = $fallbackMap->tax_category_id;
-
-                        $taxCategories[$taxCategoryId] = $this->taxCategoryRepository->find($taxCategoryId);
-                    }
-                }
-
-                if (! $taxCategories[$taxCategoryId]) {
-                    continue;
-                }
+                continue;
             }
 
             $calculationBasedOn = core()->getConfigData('sales.taxes.calculation.based_on');
@@ -1109,51 +1079,12 @@ class Cart
                 }
             });
 
-            if (empty($item->applied_tax_rate) && isset($taxCategories[$taxCategoryId])) {
-                $fallbackRate = $taxCategories[$taxCategoryId]->tax_rates()
-                    ->where('country', $address->country)
-                    ->orderBy('tax_rate', 'desc')
-                    ->first();
+            if (empty($item->applied_tax_rate)) {
+                $item->price_incl_tax = $item->price;
+                $item->base_price_incl_tax = $item->base_price;
 
-                if ($fallbackRate) {
-                    $item->applied_tax_rate = $fallbackRate->identifier;
-
-                    $item->tax_category_id = $taxCategoryId;
-
-                    $item->tax_percent = $fallbackRate->tax_rate;
-
-                    if (Tax::isInclusiveTaxProductPrices()) {
-                        $item->tax_amount = round(($item->total_incl_tax * $fallbackRate->tax_rate) / (100 + $fallbackRate->tax_rate), 4);
-
-                        $item->base_tax_amount = round(($item->base_total_incl_tax * $fallbackRate->tax_rate) / (100 + $fallbackRate->tax_rate), 4);
-
-                        $item->total = $item->total_incl_tax - $item->tax_amount;
-
-                        $item->base_total = $item->base_total_incl_tax - $item->base_tax_amount;
-
-                        $item->price = $item->total / $item->quantity;
-
-                        $item->base_price = $item->base_total / $item->quantity;
-                    } else {
-                        $item->tax_amount = round(($item->total * $fallbackRate->tax_rate) / 100, 4);
-
-                        $item->base_tax_amount = round(($item->base_total * $fallbackRate->tax_rate) / 100, 4);
-
-                        $item->total_incl_tax = $item->total + $item->tax_amount;
-
-                        $item->base_total_incl_tax = $item->base_total + $item->base_tax_amount;
-
-                        $item->price_incl_tax = $item->price + ($item->tax_amount / $item->quantity);
-
-                        $item->base_price_incl_tax = $item->base_price + ($item->base_tax_amount / $item->quantity);
-                    }
-                } else {
-                    $item->price_incl_tax = $item->price;
-                    $item->base_price_incl_tax = $item->base_price;
-
-                    $item->total_incl_tax = $item->total;
-                    $item->base_total_incl_tax = $item->base_total;
-                }
+                $item->total_incl_tax = $item->total;
+                $item->base_total_incl_tax = $item->base_total;
             }
 
             $item->save();
