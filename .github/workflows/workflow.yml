@@ -105,13 +105,21 @@ jobs:
       - name: Install NPM dependencies (Shop)
         run: |
           echo "Installing NPM dependencies for Shop..."
-          npm ci --prefix packages/Webkul/Shop
+          if [ -f packages/Webkul/Shop/package-lock.json ]; then
+            npm ci --prefix packages/Webkul/Shop
+          else
+            npm install --prefix packages/Webkul/Shop
+          fi
           echo "✅ Shop NPM dependencies installed!"
 
       - name: Install NPM dependencies (Admin)
         run: |
           echo "Installing NPM dependencies for Admin..."
-          npm ci --prefix packages/Webkul/Admin
+          if [ -f packages/Webkul/Admin/package-lock.json ]; then
+            npm ci --prefix packages/Webkul/Admin
+          else
+            npm install --prefix packages/Webkul/Admin
+          fi
           echo "✅ Admin NPM dependencies installed!"
 
       - name: Install Playwright browsers (Shop & Admin)
