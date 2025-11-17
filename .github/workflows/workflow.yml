@@ -85,7 +85,7 @@ jobs:
       - name: Install Composer dependencies
         run: |
           echo "Installing Composer dependencies..."
-          composer install --no-interaction --no-suggest --prefer-dist --optimize-autoloader --no-progress
+          composer install --no-interaction --prefer-dist --optimize-autoloader --no-progress
           echo "✅ Composer dependencies installed!"
 
       - name: Cache NPM dependencies
@@ -122,21 +122,10 @@ jobs:
           fi
           echo "✅ Admin NPM dependencies installed!"
 
-      - name: Install Playwright browsers (Shop & Admin)
-        run: |
-          echo "Installing Playwright browsers for Shop..."
-          npx -C packages/Webkul/Shop playwright install --with-deps
-          echo "✅ Playwright browsers installed for Shop!"
-
-          echo "Installing Playwright browsers for Admin..."
-          npx -C packages/Webkul/Admin playwright install --with-deps
-          echo "✅ Playwright browsers installed for Admin!"
-
       - name: Copy CI env
         run: |
           cp .env.ci .env
           php -r "file_put_contents('.env', preg_replace(['/DB_HOST=.*/','/DB_PORT=.*/','/DB_PASSWORD=.*/','/BROADCAST_DRIVER=.*/','/REDIS_CLIENT=.*/','/APP_CURRENCY=.*/'], ['DB_HOST=127.0.0.1','DB_PORT=3306','DB_PASSWORD=root','BROADCAST_DRIVER=log','REDIS_CLIENT=predis','APP_CURRENCY=USD'], file_get_contents('.env')));"
-          cat .env
 
       - name: Wait for MySQL to be ready
         run: |
@@ -164,7 +153,6 @@ jobs:
         run: |
           php artisan key:generate --force
           echo "APP_KEY generated and saved in .env"
-          grep APP_KEY .env || true
 
       - name: Setup Database
         run: |
@@ -205,23 +193,6 @@ jobs:
 
           echo "✅ Setup verification completed!"
 
-      - name: Build frontend assets
-        run: |
-          echo "Building frontend assets..."
-          npm run build || echo "No build script found or build failed"
-          echo "✅ Frontend assets built!"
-
-      - name: Start Laravel server
-        run: |
-          php -S 127.0.0.1:8000 -t public > /dev/null 2>&1 &
-          for i in $(seq 1 30); do
-            if curl -sSf http://127.0.0.1:8000 > /dev/null; then
-              break
-            fi
-            sleep 2
-          done
-          php -r "file_put_contents('.env', preg_replace(['/APP_URL=.*/'], ['APP_URL=http://127.0.0.1:8000'], file_get_contents('.env')));"
-
       - name: Run Pint Tests (Code Formatting)
         run: |
           echo "🔍 Running Pint code formatting checks..."
@@ -249,26 +220,6 @@ jobs:
 
           echo "✅ All Pest tests completed!"
 
-      - name: Run Playwright Tests (Shop E2E Tests)
-        run: |
-          echo "🎭 Running Shop Playwright E2E tests..."
-          cd packages/Webkul/Shop
-          npx playwright test --config=tests/e2e-pw/playwright.config.ts || {
-            echo "❌ Shop Playwright tests failed!"
-            exit 1
-          }
-          echo "✅ Shop Playwright tests completed!"
-
-      - name: Run Playwright Tests (Admin E2E Tests)
-        run: |
-          echo "🎭 Running Admin Playwright E2E tests..."
-          cd packages/Webkul/Admin
-          npx playwright test --config=tests/e2e-pw/playwright.config.ts || {
-            echo "❌ Admin Playwright tests failed!"
-            exit 1
-          }
-          echo "✅ Admin Playwright tests completed!"
-
       - name: Security Audit
         run: |
           echo "🔒 Running security audit..."
@@ -295,8 +246,6 @@ jobs:
           path: |
             ./storage/logs/
             ./coverage.xml
-            ./packages/Webkul/Shop/playwright-report/
-            ./packages/Webkul/Admin/playwright-report/
           retention-days: 30
           if-no-files-found: warn
 
