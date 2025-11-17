@@ -18,3 +18,4 @@ Kategori: Modified
 - packages/Webkul/Shop/src/Http/Resources/ProductResource.php
 - packages/Webkul/Shop/src/Resources/views/home/index.blade.php
 - packages/Webkul/Tax/src/Tax.php
+- packages/Webkul/Shop/tests/e2e-pw/tests/cart.spec.ts
