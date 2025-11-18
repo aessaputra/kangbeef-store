@@ -246,23 +246,22 @@ jobs:
         run: |
           echo "🔒 Running security audit..."
 
-          # Explicitly override any COMPOSER_NO_AUDIT setting
-          export COMPOSER_NO_AUDIT=0
+          # Debug environment variables
+          echo "Current COMPOSER_NO_AUDIT value: ${COMPOSER_NO_AUDIT:-not_set}"
 
-          # Check for known security vulnerabilities using --format=table for better output
-          if ! composer audit --format=table; then
+          # Force disable audit prevention
+          env COMPOSER_NO_AUDIT=0 composer audit --format=table || {
             echo "⚠️ Security vulnerabilities found in dependencies!"
             echo "Please review and update vulnerable packages."
             exit 1
-          else
-            echo "✅ No security vulnerabilities found!"
-          fi
+          }
+
+          echo "✅ No security vulnerabilities found!"
         env:
           PHP_VERSION: 8.3
           NODE_VERSION: 20
           COMPOSER_PROCESS_TIMEOUT: 0
           COMPOSER_NO_INTERACTION: 1
-          COMPOSER_NO_AUDIT: 0
 
       - name: Upload coverage reports to Codecov
         if: success() && github.event_name == 'push'
