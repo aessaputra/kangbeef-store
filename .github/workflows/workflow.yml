@@ -290,15 +290,15 @@ jobs:
           git archive -o release.tar HEAD
           mkdir -p release && tar -xf release.tar -C release
 
-      - name: Copy release to remote and run deploy script
+      - name: Copy release tarball to remote
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          source: "release/**"
-          target: "${{ secrets.REMOTE_TMP_DIR }}/repo_release"
+          source: "release.tar"
+          target: "${{ secrets.REMOTE_TMP_DIR }}/release.tar"
 
       - name: Execute remote deploy script
         id: deploy
@@ -315,17 +315,13 @@ jobs:
             # Move uploaded release into releases folder and invoke server script
             TIMESTAMP=$(date +%Y%m%d%H%M%S)
             mkdir -p "${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP"
-            cp -a "${{ secrets.REMOTE_TMP_DIR }}/repo_release/." "${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP/"
-            rm -rf "${{ secrets.REMOTE_TMP_DIR }}/repo_release"
+            tar -xf "${{ secrets.REMOTE_TMP_DIR }}/release.tar" -C "${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP"
+            rm -f "${{ secrets.REMOTE_TMP_DIR }}/release.tar"
             # Ensure deploy script exists and is executable
             if [ ! -x "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" ]; then
               echo "ERROR: deploy script not found or not executable at ${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
               exit 1
             fi
-            sed -i 's#^COMPOSER="/usr/bin/composer"#COMPOSER="${COMPOSER:-$(command -v composer || echo /usr/bin/composer)}"#g' "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
-            sed -i 's#^NPM_CMD="/usr/bin/npm"#NPM_CMD="${NPM_CMD:-$(command -v npm || echo /usr/bin/npm)}"#g' "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
-            sed -i 's#if command -v "\${COMPOSER}" >/dev/null 2>&1; then#if [ -x "\${COMPOSER}" ]; then#g' "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
-            sed -i 's#if command -v "\${NPM_CMD}" >/dev/null 2>&1 && \[ -f package.json \]; then#if [ -x "\${NPM_CMD}" ] && [ -f package.json ]; then#g' "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
             # NOTE: we pass branch name using github.ref_name (expanded by Actions runner)
             "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" "$TIMESTAMP" "${{ github.ref_name }}"
 
