@@ -298,7 +298,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
           source: "release.tar"
-          target: "${{ secrets.REMOTE_TMP_DIR }}/release.tar"
+          target: "${{ secrets.REMOTE_TMP_DIR }}"
 
       - name: Execute remote deploy script
         id: deploy
