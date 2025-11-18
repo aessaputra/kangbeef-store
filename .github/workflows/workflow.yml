@@ -320,10 +320,10 @@ jobs:
               echo "ERROR: deploy script not found or not executable at ${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
               exit 1
             fi
-            sed -i 's|^COMPOSER="/usr/bin/composer"|COMPOSER="${COMPOSER:-$(command -v composer || echo /usr/bin/composer)}"|g' "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
-            sed -i 's|^NPM_CMD="/usr/bin/npm"|NPM_CMD="${NPM_CMD:-$(command -v npm || echo /usr/bin/npm)}"|g' "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
-            sed -i 's|if command -v "\${COMPOSER}" >/dev/null 2>&1; then|if [ -x "\${COMPOSER}" ]; then|g' "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
-            sed -i 's|if command -v "\${NPM_CMD}" >/dev/null 2>&1 && \[ -f package.json \]; then|if [ -x "\${NPM_CMD}" ] && [ -f package.json ]; then|g' "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
+            sed -i 's#^COMPOSER="/usr/bin/composer"#COMPOSER="${COMPOSER:-$(command -v composer || echo /usr/bin/composer)}"#g' "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
+            sed -i 's#^NPM_CMD="/usr/bin/npm"#NPM_CMD="${NPM_CMD:-$(command -v npm || echo /usr/bin/npm)}"#g' "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
+            sed -i 's#if command -v "\${COMPOSER}" >/dev/null 2>&1; then#if [ -x "\${COMPOSER}" ]; then#g' "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
+            sed -i 's#if command -v "\${NPM_CMD}" >/dev/null 2>&1 && \[ -f package.json \]; then#if [ -x "\${NPM_CMD}" ] && [ -f package.json ]; then#g' "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
             # NOTE: we pass branch name using github.ref_name (expanded by Actions runner)
             "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" "$TIMESTAMP" "${{ github.ref_name }}"
 
