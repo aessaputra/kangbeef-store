@@ -246,11 +246,11 @@ jobs:
         run: |
           echo "🔒 Running security audit..."
 
-          # Explicitly unset COMPOSER_NO_AUDIT to allow audit
-          unset COMPOSER_NO_AUDIT
+          # Explicitly override any COMPOSER_NO_AUDIT setting
+          export COMPOSER_NO_AUDIT=0
 
-          # Check for known security vulnerabilities
-          if ! composer audit; then
+          # Check for known security vulnerabilities using --format=table for better output
+          if ! composer audit --format=table; then
             echo "⚠️ Security vulnerabilities found in dependencies!"
             echo "Please review and update vulnerable packages."
             exit 1
