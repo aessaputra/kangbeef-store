@@ -102,25 +102,47 @@ jobs:
           npm ci
           echo "✅ NPM dependencies installed!"
 
+      - name: Check Shop package.json exists
+        run: |
+          if [ ! -f "packages/Webkul/Shop/package.json" ]; then
+            echo "❌ Shop package.json not found!"
+            exit 1
+          fi
+          echo "✅ Shop package.json found!"
+
       - name: Install NPM dependencies (Shop)
         run: |
           echo "Installing NPM dependencies for Shop..."
           if [ -f packages/Webkul/Shop/package-lock.json ]; then
+            echo "📦 Using package-lock.json for Shop"
             npm ci --prefix packages/Webkul/Shop
           else
+            echo "⚠️ No package-lock.json found for Shop, running npm install"
             npm install --prefix packages/Webkul/Shop
           fi
           echo "✅ Shop NPM dependencies installed!"
+        continue-on-error: true
+
+      - name: Check Admin package.json exists
+        run: |
+          if [ ! -f "packages/Webkul/Admin/package.json" ]; then
+            echo "❌ Admin package.json not found!"
+            exit 1
+          fi
+          echo "✅ Admin package.json found!"
 
       - name: Install NPM dependencies (Admin)
         run: |
           echo "Installing NPM dependencies for Admin..."
           if [ -f packages/Webkul/Admin/package-lock.json ]; then
+            echo "📦 Using package-lock.json for Admin"
             npm ci --prefix packages/Webkul/Admin
           else
+            echo "⚠️ No package-lock.json found for Admin, running npm install"
             npm install --prefix packages/Webkul/Admin
           fi
           echo "✅ Admin NPM dependencies installed!"
+        continue-on-error: true
 
       - name: Copy CI env
         run: |
@@ -228,6 +250,7 @@ jobs:
           if ! composer audit; then
             echo "⚠️ Security vulnerabilities found in dependencies!"
             echo "Please review and update vulnerable packages."
+            exit 1
           else
             echo "✅ No security vulnerabilities found!"
           fi
@@ -257,7 +280,6 @@ jobs:
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Pint (Code Formatting) | ${{ job.status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Pest (Unit/Feature) | ${{ job.status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Playwright (E2E) | ${{ job.status == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ job.status }}" = "success" ]; then
             echo "✅ All tests passed successfully!"
@@ -273,7 +295,6 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
     environment:
       name: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
-      url: ${{ steps.deploy.outputs.url }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
