@@ -314,7 +314,9 @@ jobs:
             mkdir -p "${{ secrets.REMOTE_RELEASES_DIR }}" "${{ secrets.REMOTE_SHARED_DIR }}"
             # Move uploaded release into releases folder and invoke server script
             TIMESTAMP=$(date +%Y%m%d%H%M%S)
-            mv "${{ secrets.REMOTE_TMP_DIR }}/repo_release" "${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP"
+            mkdir -p "${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP"
+            cp -a "${{ secrets.REMOTE_TMP_DIR }}/repo_release/." "${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP/"
+            rm -rf "${{ secrets.REMOTE_TMP_DIR }}/repo_release"
             # Ensure deploy script exists and is executable
             if [ ! -x "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" ]; then
               echo "ERROR: deploy script not found or not executable at ${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
