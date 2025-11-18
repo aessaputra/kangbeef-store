@@ -328,6 +328,8 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           source: "release.tar"
           target: "${{ secrets.REMOTE_TMP_DIR }}"
+          overwrite: true
+          rm: false
 
       - name: Execute remote deploy script
         id: deploy
