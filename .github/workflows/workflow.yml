@@ -321,7 +321,11 @@ jobs:
               exit 1
             fi
             # NOTE: we pass branch name using github.ref_name (expanded by Actions runner)
-            sudo -E "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" "$TIMESTAMP" "${{ github.ref_name }}"
+            if [ -n "${{ secrets.REMOTE_SUDO_PASSWORD }}" ]; then
+              echo "${{ secrets.REMOTE_SUDO_PASSWORD }}" | sudo -S -E "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" "$TIMESTAMP" "${{ github.ref_name }}"
+            else
+              "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" "$TIMESTAMP" "${{ github.ref_name }}"
+            fi
 
             # Output deployment URL for environment
             if [ "${{ github.ref_name }}" = "main" ]; then
