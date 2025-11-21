@@ -10,7 +10,7 @@ env:
   PHP_VERSION: "8.3"
   NODE_VERSION: "20"
 
-# Concurrency to prevent multiple runs of the same workflow
+# Concurrency to prevent multiple runs of the same workflow.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
