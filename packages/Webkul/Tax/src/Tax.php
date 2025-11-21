@@ -89,13 +89,13 @@ class Tax
 
             public function __construct()
             {
-                $country = core()->getConfigData('sales.shipping.origin.country');
-                $state = core()->getConfigData('sales.shipping.origin.state');
-                $postcode = core()->getConfigData('sales.shipping.origin.postcode');
+                $this->country = core()->getConfigData('sales.shipping.origin.country') != ''
+                    ? core()->getConfigData('sales.shipping.origin.country')
+                    : strtoupper(config('app.default_country'));
 
-                $this->country = $country !== '' ? $country : (request()->input('country') ?: strtoupper(config('app.default_country')));
-                $this->state = $state !== '' ? $state : request()->input('state');
-                $this->postcode = $postcode !== '' ? $postcode : request()->input('postcode');
+                $this->state = core()->getConfigData('sales.shipping.origin.state');
+
+                $this->postcode = core()->getConfigData('sales.shipping.origin.postcode');
             }
         };
     }
@@ -115,13 +115,13 @@ class Tax
 
             public function __construct()
             {
-                $country = core()->getConfigData('sales.taxes.default_destination_calculation.country');
-                $state = core()->getConfigData('sales.taxes.default_destination_calculation.state');
-                $postcode = core()->getConfigData('sales.taxes.default_destination_calculation.post_code');
+                $this->country = core()->getConfigData('sales.taxes.default_destination_calculation.country') != ''
+                    ? core()->getConfigData('sales.taxes.default_destination_calculation.country')
+                    : strtoupper(config('app.default_country'));
 
-                $this->country = $country !== '' ? $country : (request()->input('country') ?: strtoupper(config('app.default_country')));
-                $this->state = $state !== '' ? $state : request()->input('state');
-                $this->postcode = $postcode !== '' ? $postcode : request()->input('postcode');
+                $this->state = core()->getConfigData('sales.taxes.default_destination_calculation.state');
+
+                $this->postcode = core()->getConfigData('sales.taxes.default_destination_calculation.post_code');
             }
         };
     }

@@ -111,7 +111,7 @@ class CartController extends APIController
         }
 
         return new JsonResource([
-            'data'     => Cart::getCart() ? new CartResource(Cart::getCart()) : null,
+            'data'     => new CartResource(Cart::getCart()) ?? null,
             'message'  => trans('shop::app.checkout.cart.index.remove-selected-success'),
         ]);
     }
@@ -128,7 +128,7 @@ class CartController extends APIController
         }
 
         return new JsonResource([
-            'data'     => Cart::getCart() ? new CartResource(Cart::getCart()) : null,
+            'data'     => new CartResource(Cart::getCart()) ?? null,
             'message'  => trans('shop::app.checkout.cart.index.move-to-wishlist-success'),
         ]);
     }
@@ -166,26 +166,16 @@ class CartController extends APIController
 
         $cart = Cart::getCart();
 
-        $billing = (new CartAddress)->fill([
-            'country'          => request()->input('country'),
-            'state'            => request()->input('state'),
-            'postcode'         => request()->input('postcode'),
-            'cart_id'          => $cart->id,
-            'address_type'     => CartAddress::ADDRESS_TYPE_BILLING,
-            'use_for_shipping' => true,
+        $address = (new CartAddress)->fill([
+            'country'  => request()->input('country'),
+            'state'    => request()->input('state'),
+            'postcode' => request()->input('postcode'),
+            'cart_id'  => $cart->id,
         ]);
 
-        $shipping = (new CartAddress)->fill([
-            'country'       => request()->input('country'),
-            'state'         => request()->input('state'),
-            'postcode'      => request()->input('postcode'),
-            'cart_id'       => $cart->id,
-            'address_type'  => CartAddress::ADDRESS_TYPE_SHIPPING,
-        ]);
+        $cart->setRelation('billing_address', $address);
 
-        $cart->setRelation('billing_address', $billing);
-
-        $cart->setRelation('shipping_address', $shipping);
+        $cart->setRelation('shipping_address', $address);
 
         Cart::setCart($cart);
 

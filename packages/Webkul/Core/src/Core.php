@@ -476,10 +476,7 @@ class Core
 
         $exchangeRate = $this->getExchangeRate($targetCurrency->id);
 
-        if (
-            $exchangeRate === null
-            || ! $exchangeRate->rate
-        ) {
+        if (! $exchangeRate) {
             return $amount;
         }
 
@@ -544,10 +541,6 @@ class Core
         $currency = $currencyCode
             ? $this->getAllCurrencies()->where('code', $currencyCode)->first()
             : $this->getCurrentCurrency();
-
-        if (! $currency) {
-            $currency = $this->getBaseCurrency() ?: $this->getCurrentCurrency();
-        }
 
         return $this->formatCurrency($price, $currency);
     }
