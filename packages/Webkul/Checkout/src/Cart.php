@@ -25,24 +25,24 @@ class Cart
     /**
      * The cart instance.
      *
-     * @var Contracts\Cart
+     * @var \Webkul\Checkout\Contracts\Cart
      */
     private $cart;
 
     /**
      * Constant for tax calculation based on shipping origin.
      */
-    public const TAX_CALCULATION_BASED_ON_SHIPPING_ORIGIN = 'shipping_origin';
+    const TAX_CALCULATION_BASED_ON_SHIPPING_ORIGIN = 'shipping_origin';
 
     /**
      * Constant for tax calculation based on billing address.
      */
-    public const TAX_CALCULATION_BASED_ON_BILLING_ADDRESS = 'billing_address';
+    const TAX_CALCULATION_BASED_ON_BILLING_ADDRESS = 'billing_address';
 
     /**
      * Constant for tax calculation based on shipping address.
      */
-    public const TAX_CALCULATION_BASED_ON_SHIPPING_ADDRESS = 'shipping_address';
+    const TAX_CALCULATION_BASED_ON_SHIPPING_ADDRESS = 'shipping_address';
 
     /**
      * Create a new class instance.
@@ -62,7 +62,7 @@ class Cart
     }
 
     /**
-     * Initialize cart.
+     * Initialize cart
      */
     public function initCart(?CustomerContract $customer = null): void
     {
@@ -81,7 +81,7 @@ class Cart
     }
 
     /**
-     * Returns cart.
+     * Returns cart
      */
     public function refreshCart(): void
     {
@@ -93,7 +93,7 @@ class Cart
     }
 
     /**
-     * Set cart.
+     * Set cart
      */
     public function setCart(Contracts\Cart $cart): void
     {
@@ -151,7 +151,7 @@ class Cart
     }
 
     /**
-     * Remove cart and destroy the session.
+     * Remove cart and destroy the session
      */
     public function removeCart(Contracts\Cart $cart): void
     {
@@ -165,7 +165,7 @@ class Cart
     }
 
     /**
-     * Reset cart.
+     * Reset cart
      */
     public function resetCart(): void
     {
@@ -218,7 +218,7 @@ class Cart
 
         $guestCart = $this->cartRepository->find(session()->get('cart')->id);
 
-        /*
+        /**
          * When the logged in customer is not having any of the cart instance previously and are active.
          */
         if (! $cart) {
@@ -469,7 +469,7 @@ class Cart
      */
     public function updateOrCreateShippingAddress(array $params): ?CartAddressContract
     {
-        /*
+        /**
          * If cart is not having any stockable items then no need to save shipping address.
          */
         if (! $this->cart->haveStockableItems()) {
@@ -824,7 +824,7 @@ class Cart
     public function collectTotals(): self
     {
         if (! $this->validateItems()) {
-            /*
+            /**
              * Reset the cart so that fresh copy of cart can be created.
              */
             $this->refreshCart();
@@ -954,7 +954,7 @@ class Cart
 
                 $price = core()->convertPrice($basePrice);
 
-                /*
+                /**
                  * Reset the item price every time to initial price if the inclusive price is enabled.
                  * Update the item price if exchange rates changes with exclusive price is enabled.
                  */
