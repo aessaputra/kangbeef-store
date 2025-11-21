@@ -358,6 +358,10 @@ jobs:
             tar -xf "${{ secrets.REMOTE_TMP_DIR }}/release.tar" -C "${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP"
             rm -f "${{ secrets.REMOTE_TMP_DIR }}/release.tar"
             # Ensure deploy script exists and is executable
+            # We copy it from the release to ensure it's always up to date
+            cp "${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP/scripts/main_deploy.sh" "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
+            chmod +x "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
+
             if [ ! -x "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" ]; then
               echo "ERROR: deploy script not found or not executable at ${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
               exit 1
