@@ -365,9 +365,10 @@ jobs:
             # NOTE: we pass branch name using github.ref_name (expanded by Actions runner)
             "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" "$TIMESTAMP" "${{ github.ref_name }}"
 
-            # Output deployment URL for environment
-            if [ "${{ github.ref_name }}" = "main" ]; then
-              echo "url=https://kangbeef.com" >> $GITHUB_OUTPUT
-            else
-              echo "url=https://staging.kangbeef.com" >> $GITHUB_OUTPUT
-            fi
+      - name: Set Deployment URL
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "url=https://kangbeef.com" >> $GITHUB_OUTPUT
+          else
+            echo "url=https://staging.kangbeef.com" >> $GITHUB_OUTPUT
+          fi
