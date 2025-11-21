@@ -319,6 +319,15 @@ jobs:
           git archive -o release.tar HEAD
           mkdir -p release && tar -xf release.tar -C release
 
+      - name: Pre-cleanup remote
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: rm -rf "${{ secrets.REMOTE_TMP_DIR }}/release.tar"
+
       - name: Copy release tarball to remote
         uses: appleboy/scp-action@v0.1.7
         with:
