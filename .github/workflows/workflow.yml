@@ -354,19 +354,19 @@ jobs:
             mkdir -p "${{ secrets.REMOTE_RELEASES_DIR }}" "${{ secrets.REMOTE_SHARED_DIR }}"
             # Move uploaded release into releases folder and invoke server script
             TIMESTAMP=$(date +%Y%m%d%H%M%S)
-            mkdir -p "${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP"
-            tar -xf "${{ secrets.REMOTE_TMP_DIR }}/release.tar" -C "${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP"
+            RELEASE_DIR="${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP"
+            mkdir -p "$RELEASE_DIR"
+            tar -xf "${{ secrets.REMOTE_TMP_DIR }}/release.tar" -C "$RELEASE_DIR"
             rm -f "${{ secrets.REMOTE_TMP_DIR }}/release.tar"
-            # Ensure deploy script exists and is executable
-            # We copy it from the release to ensure it's always up to date
-            cp "${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP/scripts/main_deploy.sh" "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
-            chmod +x "${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
-
+            
+            # Ensure deploy script exists and is executable on server
             if [ ! -x "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" ]; then
               echo "ERROR: deploy script not found or not executable at ${{ secrets.REMOTE_DEPLOY_SCRIPT }}"
               exit 1
             fi
-            # NOTE: we pass branch name using github.ref_name (expanded by Actions runner)
+            
+            # NOTE: we pass RELEASE_DIR, TIMESTAMP, and branch name to deploy script
+            export RELEASE_DIR
             "${{ secrets.REMOTE_DEPLOY_SCRIPT }}" "$TIMESTAMP" "${{ github.ref_name }}"
 
       - name: Set Deployment URL
