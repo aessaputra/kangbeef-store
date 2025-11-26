@@ -16,9 +16,9 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         // Skip debugbar configuration if package is not installed
-        // if (! class_exists(Debugbar::class)) {
-        //     return;
-        // }
+        if (! class_exists(Debugbar::class)) {
+            return;
+        }
 
         $allowedIPs = array_map('trim', explode(',', config('app.debug_allowed_ips')));
 
