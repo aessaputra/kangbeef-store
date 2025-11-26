@@ -15,7 +15,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Skip debugbar configuration if package is not installed
+        // Skip debugbar configuration if package is not installed.
         // if (! class_exists(Debugbar::class)) {
         //     return;
         // }
