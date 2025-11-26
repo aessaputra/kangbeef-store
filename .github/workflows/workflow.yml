@@ -350,11 +350,27 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             set -euo pipefail
+            
+            # Determine domain and paths based on branch
+            if [ "${{ github.ref_name }}" == "main" ]; then
+              DOMAIN="kangbeef.com"
+            elif [ "${{ github.ref_name }}" == "dev" ]; then
+              DOMAIN="staging.kangbeef.com"
+            else
+              echo "ERROR: Unknown branch '${{ github.ref_name }}'"
+              exit 1
+            fi
+            
+            # Set paths dynamically based on domain
+            RELEASES_DIR="/home/${{ secrets.SSH_USER }}/web/${DOMAIN}/private/releases"
+            SHARED_DIR="/home/${{ secrets.SSH_USER }}/web/${DOMAIN}/private/shared"
+            
             # Ensure target dirs exist
-            mkdir -p "${{ secrets.REMOTE_RELEASES_DIR }}" "${{ secrets.REMOTE_SHARED_DIR }}"
+            mkdir -p "${RELEASES_DIR}" "${SHARED_DIR}"
+            
             # Move uploaded release into releases folder and invoke server script
             TIMESTAMP=$(date +%Y%m%d%H%M%S)
-            RELEASE_DIR="${{ secrets.REMOTE_RELEASES_DIR }}/$TIMESTAMP"
+            RELEASE_DIR="${RELEASES_DIR}/$TIMESTAMP"
             mkdir -p "$RELEASE_DIR"
             tar -xf "${{ secrets.REMOTE_TMP_DIR }}/release.tar" -C "$RELEASE_DIR"
             rm -f "${{ secrets.REMOTE_TMP_DIR }}/release.tar"
