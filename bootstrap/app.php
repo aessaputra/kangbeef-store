@@ -40,6 +40,20 @@ return Application::configure(basePath: dirname(__DIR__))
          * Add the overridden middleware at the end of the list.
          */
         $middleware->replaceInGroup('web', BaseEncryptCookies::class, EncryptCookies::class);
+
+        /**
+         * Trust Proxies - For reverse proxy (nginx → apache)
+         */
+        $middleware->trustProxies(
+            at: env('TRUSTED_PROXIES') ? 
+                (env('TRUSTED_PROXIES') === '*' ? '*' : explode(',', env('TRUSTED_PROXIES'))) : 
+                null,
+            headers: \Illuminate\Http\Request::HEADER_X_FORWARDED_FOR |
+                     \Illuminate\Http\Request::HEADER_X_FORWARDED_HOST |
+                     \Illuminate\Http\Request::HEADER_X_FORWARDED_PORT |
+                     \Illuminate\Http\Request::HEADER_X_FORWARDED_PROTO |
+                     \Illuminate\Http\Request::HEADER_X_FORWARDED_PREFIX
+        );
     })
     ->withSchedule(function (Schedule $schedule) {
         //
