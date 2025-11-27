@@ -8,6 +8,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
 use Illuminate\Foundation\Http\Middleware\PreventRequestsDuringMaintenance;
+use Illuminate\Http\Request;
 use Webkul\Core\Http\Middleware\SecureHeaders;
 use Webkul\Installer\Http\Middleware\CanInstall;
 
@@ -42,17 +43,17 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->replaceInGroup('web', BaseEncryptCookies::class, EncryptCookies::class);
 
         /**
-         * Trust Proxies - For reverse proxy (nginx → apache)
+         * Trust Proxies
          */
         $middleware->trustProxies(
-            at: env('TRUSTED_PROXIES') ? 
-                (env('TRUSTED_PROXIES') === '*' ? '*' : explode(',', env('TRUSTED_PROXIES'))) : 
+            at: env('TRUSTED_PROXIES') ?
+                (env('TRUSTED_PROXIES') === '*' ? '*' : explode(',', env('TRUSTED_PROXIES'))) :
                 null,
-            headers: \Illuminate\Http\Request::HEADER_X_FORWARDED_FOR |
-                     \Illuminate\Http\Request::HEADER_X_FORWARDED_HOST |
-                     \Illuminate\Http\Request::HEADER_X_FORWARDED_PORT |
-                     \Illuminate\Http\Request::HEADER_X_FORWARDED_PROTO |
-                     \Illuminate\Http\Request::HEADER_X_FORWARDED_PREFIX
+            headers: Request::HEADER_X_FORWARDED_FOR |
+                     Request::HEADER_X_FORWARDED_HOST |
+                     Request::HEADER_X_FORWARDED_PORT |
+                     Request::HEADER_X_FORWARDED_PROTO |
+                     Request::HEADER_X_FORWARDED_PREFIX
         );
     })
     ->withSchedule(function (Schedule $schedule) {
