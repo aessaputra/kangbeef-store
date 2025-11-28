@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => 'Adreça de correu electrònic',
             'forget-password-link'   => 'Has oblidat la contrasenya?',
             'password'               => 'Contrasenya',
-            'powered-by-description' => 'Impulsat per :bagisto, un projecte de codi obert de :webkul.',
+            'powered-by-description' => 'Creat per :aessaputra',
             'submit-btn'             => 'Iniciar sessió',
             'title'                  => 'Iniciar sessió',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => 'Correu electrònic registrat',
                 'email-not-exist'        => 'El correu electrònic no existeix',
                 'page-title'             => 'Oblidar contrasenya',
-                'powered-by-description' => 'Impulsat per :bagisto, un projecte de codi obert de :webkul.',
+                'powered-by-description' => 'Creat per :aessaputra',
                 'reset-link-sent'        => 'Enllaç per restablir la contrasenya enviat',
                 'sign-in-link'           => 'Tornar a iniciar sessió?',
                 'submit-btn'             => 'Restablir',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'Confirmar contrasenya',
             'email'                  => 'Correu electrònic registrat',
             'password'               => 'Contrasenya',
-            'powered-by-description' => 'Impulsat per :bagisto, un projecte de codi obert de :webkul.',
+            'powered-by-description' => 'Creat per :aessaputra',
             'submit-btn'             => 'Restablir contrasenya',
             'title'                  => 'Restablir contrasenya',
         ],

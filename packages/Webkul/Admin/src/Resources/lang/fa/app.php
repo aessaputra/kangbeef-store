@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => 'آدرس ایمیل',
             'forget-password-link'   => 'فراموشی رمز عبور؟',
             'password'               => 'رمز عبور',
-            'powered-by-description' => 'قدرت گرفته از :bagisto، یک پروژه متن‌باز توسط :webkul.',
+            'powered-by-description' => 'ساخته شده توسط :aessaputra',
             'submit-btn'             => 'ورود',
             'title'                  => 'ورود',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => 'آدرس ایمیل ثبت شده',
                 'email-not-exist'        => 'آدرس ایمیل وجود ندارد',
                 'page-title'             => 'فراموشی رمز عبور',
-                'powered-by-description' => 'قدرت گرفته از :bagisto، یک پروژه متن‌باز توسط :webkul.',
+                'powered-by-description' => 'ساخته شده توسط :aessaputra',
                 'reset-link-sent'        => 'لینک تغییر رمز عبور ارسال شد',
                 'sign-in-link'           => 'بازگشت به صفحه ورود؟',
                 'submit-btn'             => 'تغییر رمز',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'تأیید رمز عبور',
             'email'                  => 'آدرس ایمیل ثبت شده',
             'password'               => 'رمز عبور',
-            'powered-by-description' => 'قدرت گرفته از :bagisto، یک پروژه متن‌باز توسط :webkul.',
+            'powered-by-description' => 'ساخته شده توسط :aessaputra',
             'submit-btn'             => 'تغییر رمز عبور',
             'title'                  => 'تغییر رمز عبور',
         ],

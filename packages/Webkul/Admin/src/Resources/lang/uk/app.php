@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => 'Адреса електронної пошти',
             'forget-password-link'   => 'Забули пароль?',
             'password'               => 'Пароль',
-            'powered-by-description' => 'Працює на платформі :bagisto, спільний проект :webkul.',
+            'powered-by-description' => 'Створено :aessaputra',
             'submit-btn'             => 'Увійти',
             'title'                  => 'Увійти',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => 'Зареєстрована електронна пошта',
                 'email-not-exist'        => 'Електронна пошта не існує',
                 'page-title'             => 'Забули пароль',
-                'powered-by-description' => 'Працює на платформі :bagisto, спільний проект :webkul.',
+                'powered-by-description' => 'Створено :aessaputra',
                 'reset-link-sent'        => 'Посилання на скидання пароля відправлено',
                 'sign-in-link'           => 'Повернутися до увійти?',
                 'submit-btn'             => 'Скинути',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'Підтвердити пароль',
             'email'                  => 'Зареєстрована електронна пошта',
             'password'               => 'Пароль',
-            'powered-by-description' => 'Працює на платформі :bagisto, спільний проект :webkul.',
+            'powered-by-description' => 'Створено :aessaputra',
             'submit-btn'             => 'Скинути пароль',
             'title'                  => 'Скинути пароль',
         ],

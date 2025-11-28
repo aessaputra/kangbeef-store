@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => 'Adres e-mail',
             'forget-password-link'   => 'Zapomniałeś hasła?',
             'password'               => 'Hasło',
-            'powered-by-description' => 'Napędzane przez :bagisto, projekt open-source autorstwa :webkul.',
+            'powered-by-description' => 'Stworzone przez :aessaputra',
             'submit-btn'             => 'Zaloguj się',
             'title'                  => 'Zaloguj się',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => 'Zarejestrowany adres e-mail',
                 'email-not-exist'        => 'E-mail nie istnieje',
                 'page-title'             => 'Zapomniałem hasła',
-                'powered-by-description' => 'Napędzane przez :bagisto, projekt open-source autorstwa :webkul.',
+                'powered-by-description' => 'Stworzone przez :aessaputra',
                 'reset-link-sent'        => 'Link do resetowania hasła wysłany',
                 'sign-in-link'           => 'Powrót do logowania?',
                 'submit-btn'             => 'Resetuj',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'Potwierdź hasło',
             'email'                  => 'Zarejestrowany adres e-mail',
             'password'               => 'Hasło',
-            'powered-by-description' => 'Napędzane przez :bagisto, projekt open-source autorstwa :webkul.',
+            'powered-by-description' => 'Stworzone przez :aessaputra',
             'submit-btn'             => 'Zresetuj hasło',
             'title'                  => 'Zresetuj hasło',
         ],

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => 'Адрес электронной почты',
             'forget-password-link'   => 'Забыли пароль?',
             'password'               => 'Пароль',
-            'powered-by-description' => 'Работает на :bagisto, проект с открытым исходным кодом от :webkul.',
+            'powered-by-description' => 'Создано :aessaputra',
             'submit-btn'             => 'Войти',
             'title'                  => 'Войти',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => 'Зарегистрированный адрес электронной почты',
                 'email-not-exist'        => 'Такой адрес электронной почты не существует',
                 'page-title'             => 'Забыли пароль',
-                'powered-by-description' => 'Работает на :bagisto, проект с открытым исходным кодом от :webkul.',
+                'powered-by-description' => 'Создано :aessaputra',
                 'reset-link-sent'        => 'Ссылка для сброса пароля отправлена',
                 'sign-in-link'           => 'Вернуться к входу?',
                 'submit-btn'             => 'Сбросить',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'Подтвердите пароль',
             'email'                  => 'Зарегистрированный адрес электронной почты',
             'password'               => 'Пароль',
-            'powered-by-description' => 'Работает на :bagisto, проект с открытым исходным кодом от :webkul.',
+            'powered-by-description' => 'Создано :aessaputra',
             'submit-btn'             => 'Сбросить пароль',
             'title'                  => 'Сброс пароля',
         ],

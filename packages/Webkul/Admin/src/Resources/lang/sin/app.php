@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => 'ඊමේල් ලිපිනය',
             'forget-password-link'   => 'මුර මුදල් අමතකවෙනිද?',
             'password'               => 'මුර පදය',
-            'powered-by-description' => ':webkul විසින් නිර්මාණය කරන ලද විවෘත මූලාශ්‍ර ව්‍යාපෘතියක් වන :bagisto විසින් බලගැන්වී ඇත.',
+            'powered-by-description' => ':aessaputra වසන නරමණය කරන ලද',
             'submit-btn'             => 'පිවිසීම',
             'title'                  => 'පිවිසීම',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => 'ලිපිනය',
                 'email-not-exist'        => 'ලිපිනය නොපවතී',
                 'page-title'             => 'මුර මුදල් අමතකවෙනිද?',
-                'powered-by-description' => ':webkul විසින් නිර්මාණය කරන ලද විවෘත මූලාශ්‍ර ව්‍යාපෘතියක් වන :bagisto විසින් බලගැන්වී ඇත.',
+                'powered-by-description' => ':aessaputra වසන නරමණය කරන ලද',
                 'reset-link-sent'        => 'මුර මුදල් අමතකවූ ලින්ක් එක යවන ලදි',
                 'sign-in-link'           => 'පිවිසීමට ආරම්භකරන්න?',
                 'submit-btn'             => 'නැවත සකසන්න',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'මුර පදය තහවුරු කරන්න',
             'email'                  => 'ලිපිනය',
             'password'               => 'මුර පදය',
-            'powered-by-description' => ':webkul විසින් නිර්මාණය කරන ලද විවෘත මූලාශ්‍ර ව්‍යාපෘතියක් වන :bagisto විසින් බලගැන්වී ඇත.',
+            'powered-by-description' => ':aessaputra වසන නරමණය කරන ලද',
             'submit-btn'             => 'මුර පදය නැවත සකසන්න',
             'title'                  => 'මුර පදය නැවත සකසන්න',
         ],

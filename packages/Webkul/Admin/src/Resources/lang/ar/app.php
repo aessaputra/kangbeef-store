@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => 'عنوان البريد الإلكتروني',
             'forget-password-link'   => 'نسيت كلمة المرور؟',
             'password'               => 'كلمة المرور',
-            'powered-by-description' => 'مدعوم من :bagisto، مشروع مفتوح المصدر من :webkul.',
+            'powered-by-description' => 'صُنع بواسطة :aessaputra',
             'submit-btn'             => 'تسجيل الدخول',
             'title'                  => 'تسجيل الدخول',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => 'البريد الإلكتروني المسجل',
                 'email-not-exist'        => 'البريد الإلكتروني غير موجود',
                 'page-title'             => 'نسيت كلمة المرور',
-                'powered-by-description' => 'مدعوم من :bagisto، مشروع مفتوح المصدر من :webkul.',
+                'powered-by-description' => 'صُنع بواسطة :aessaputra',
                 'reset-link-sent'        => 'تم إرسال رابط إعادة تعيين كلمة المرور',
                 'sign-in-link'           => 'العودة إلى تسجيل الدخول؟',
                 'submit-btn'             => 'إعادة تعيين',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'تأكيد كلمة المرور',
             'email'                  => 'البريد الإلكتروني المسجل',
             'password'               => 'كلمة المرور',
-            'powered-by-description' => 'مدعوم من :bagisto، مشروع مفتوح المصدر من :webkul.',
+            'powered-by-description' => 'صُنع بواسطة :aessaputra',
             'submit-btn'             => 'إعادة تعيين كلمة المرور',
             'title'                  => 'إعادة تعيين كلمة المرور',
         ],

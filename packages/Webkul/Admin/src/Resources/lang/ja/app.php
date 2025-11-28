@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => 'メールアドレス',
             'forget-password-link'   => 'パスワードを忘れましたか？',
             'password'               => 'パスワード',
-            'powered-by-description' => ':webkul によるオープンソースプロジェクト :bagisto によって提供されています。',
+            'powered-by-description' => ':aessaputra によって作成',
             'submit-btn'             => 'サインイン',
             'title'                  => 'サインイン',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => '登録済みメールアドレス',
                 'email-not-exist'        => 'メールアドレスが存在しません',
                 'page-title'             => 'パスワードを忘れる',
-                'powered-by-description' => ':webkul によるオープンソースプロジェクト :bagisto によって提供されています。',
+                'powered-by-description' => ':aessaputra によって作成',
                 'reset-link-sent'        => 'パスワードリセットリンク送信済み',
                 'sign-in-link'           => 'サインイン画面に戻る？',
                 'submit-btn'             => 'リセット',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'パスワードを確認',
             'email'                  => '登録済みメールアドレス',
             'password'               => 'パスワード',
-            'powered-by-description' => ':webkul によるオープンソースプロジェクト :bagisto によって提供されています。',
+            'powered-by-description' => ':aessaputra によって作成',
             'submit-btn'             => 'パスワードをリセット',
             'title'                  => 'パスワードをリセット',
         ],

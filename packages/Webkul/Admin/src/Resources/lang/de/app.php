@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => 'E-Mail-Adresse',
             'forget-password-link'   => 'Passwort vergessen?',
             'password'               => 'Passwort',
-            'powered-by-description' => 'Powered by :bagisto, ein Open-Source-Projekt von :webkul.',
+            'powered-by-description' => 'Dibuat Oleh :aessaputra',
             'submit-btn'             => 'Anmelden',
             'title'                  => 'Anmelden',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => 'Registrierte E-Mail',
                 'email-not-exist'        => 'E-Mail existiert nicht',
                 'page-title'             => 'Passwort vergessen',
-                'powered-by-description' => 'Powered by :bagisto, ein Open-Source-Projekt von :webkul.',
+                'powered-by-description' => 'Dibuat Oleh :aessaputra',
                 'reset-link-sent'        => 'Link zum Zurücksetzen des Passworts gesendet',
                 'sign-in-link'           => 'Zurück zur Anmeldung?',
                 'submit-btn'             => 'Zurücksetzen',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'Passwort bestätigen',
             'email'                  => 'Registrierte E-Mail',
             'password'               => 'Passwort',
-            'powered-by-description' => 'Powered by :bagisto, ein Open-Source-Projekt von :webkul.',
+            'powered-by-description' => 'Dibuat Oleh :aessaputra',
             'submit-btn'             => 'Passwort zurücksetzen',
             'title'                  => 'Passwort zurücksetzen',
         ],
@@ -4709,7 +4709,7 @@ return [
             ],
 
             'powered-by' => [
-                'description' => 'Bereitgestellt von :bagisto, ein Open-Source-Projekt von :webkul.',
+                'powered-by-description' => 'Erstellt von :aessaputra',
             ],
         ],
 

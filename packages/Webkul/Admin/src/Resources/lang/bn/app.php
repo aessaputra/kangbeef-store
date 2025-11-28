@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => 'ইমেইল ঠিকানা',
             'forget-password-link'   => 'পাসওয়ার্ড ভুলে গিয়েছেন?',
             'password'               => 'পাসওয়ার্ড',
-            'powered-by-description' => ':bagisto দ্বারা চালিত, :webkul দ্বারা একটি ওপেন-সোর্স প্রকল্প।',
+            'powered-by-description' => 'তর করছন :aessaputra',
             'submit-btn'             => 'সাইন ইন করুন',
             'title'                  => 'সাইন ইন',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => 'রেজিস্টার্ড ইমেইল',
                 'email-not-exist'        => 'ইমেইল প্রাপ্ত হয়নি',
                 'page-title'             => 'পাসওয়ার্ড ভুলে গেছেন',
-                'powered-by-description' => ':bagisto দ্বারা চালিত, :webkul দ্বারা একটি ওপেন-সোর্স প্রকল্প।',
+                'powered-by-description' => 'তর করছন :aessaputra',
                 'reset-link-sent'        => 'পাসওয়ার্ড রিসেট লিঙ্ক পাঠানো হয়েছে',
                 'sign-in-link'           => 'সাইন ইনে ফিরে যান?',
                 'submit-btn'             => 'রিসেট করুন',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'পাসওয়ার্ড নিশ্চিত করুন',
             'email'                  => 'রেজিস্টার্ড ইমেইল',
             'password'               => 'পাসওয়ার্ড',
-            'powered-by-description' => ':bagisto দ্বারা চালিত, :webkul দ্বারা একটি ওপেন-সোর্স প্রকল্প।',
+            'powered-by-description' => 'তর করছন :aessaputra',
             'submit-btn'             => 'পাসওয়ার্ড রিসেট করুন',
             'title'                  => 'পাসওয়ার্ড রিসেট',
         ],

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => 'E-mailadres',
             'forget-password-link'   => 'Wachtwoord Vergeten?',
             'password'               => 'Wachtwoord',
-            'powered-by-description' => 'Aangedreven door :bagisto, een open-source project van :webkul.',
+            'powered-by-description' => 'Gemaakt door :aessaputra',
             'submit-btn'             => 'Aanmelden',
             'title'                  => 'Aanmelden',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => 'Geregistreerd E-mailadres',
                 'email-not-exist'        => 'E-mailadres Bestaat Niet',
                 'page-title'             => 'Wachtwoord Vergeten',
-                'powered-by-description' => 'Aangedreven door :bagisto, een open-source project van :webkul.',
+                'powered-by-description' => 'Gemaakt door :aessaputra',
                 'reset-link-sent'        => 'Reset Wachtwoordlink Verzonden',
                 'sign-in-link'           => 'Terug naar Aanmelden?',
                 'submit-btn'             => 'Herstellen',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'Bevestig Wachtwoord',
             'email'                  => 'Geregistreerd E-mailadres',
             'password'               => 'Wachtwoord',
-            'powered-by-description' => 'Aangedreven door :bagisto, een open-source project van :webkul.',
+            'powered-by-description' => 'Gemaakt door :aessaputra',
             'submit-btn'             => 'Wachtwoord Herstellen',
             'title'                  => 'Wachtwoord Herstellen',
         ],

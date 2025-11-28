@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => 'Endereço de Email',
             'forget-password-link'   => 'Esqueceu a Senha?',
             'password'               => 'Senha',
-            'powered-by-description' => 'Desenvolvido por :bagisto, um projeto de código aberto da :webkul.',
+            'powered-by-description' => 'Criado por :aessaputra',
             'submit-btn'             => 'Entrar',
             'title'                  => 'Entrar',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => 'Email Registrado',
                 'email-not-exist'        => 'Email não Existe',
                 'page-title'             => 'Esqueceu a Senha',
-                'powered-by-description' => 'Desenvolvido por :bagisto, um projeto de código aberto da :webkul.',
+                'powered-by-description' => 'Criado por :aessaputra',
                 'reset-link-sent'        => 'Link de Redefinição de Senha enviado',
                 'sign-in-link'           => 'Voltar para Entrar?',
                 'submit-btn'             => 'Redefinir',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'Confirmar Senha',
             'email'                  => 'Email Registrado',
             'password'               => 'Senha',
-            'powered-by-description' => 'Desenvolvido por :bagisto, um projeto de código aberto da :webkul.',
+            'powered-by-description' => 'Criado por :aessaputra',
             'submit-btn'             => 'Redefinir Senha',
             'title'                  => 'Redefinir Senha',
         ],

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => '电子邮件地址',
             'forget-password-link'   => '忘记密码？',
             'password'               => '密码',
-            'powered-by-description' => '由 :bagisto 提供支持，一个由 :webkul 社区支持的项目。',
+            'powered-by-description' => '由 :aessaputra 创建',
             'submit-btn'             => '登录',
             'title'                  => '登录',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => '注册电子邮件',
                 'email-not-exist'        => '电子邮件不存在',
                 'page-title'             => '忘记密码',
-                'powered-by-description' => '由 :bagisto 提供支持，一个由 :webkul 社区支持的项目。',
+                'powered-by-description' => '由 :aessaputra 创建',
                 'reset-link-sent'        => '重置密码链接已发送',
                 'sign-in-link'           => '返回登录？',
                 'submit-btn'             => '重置',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => '确认密码',
             'email'                  => '注册电子邮件',
             'password'               => '密码',
-            'powered-by-description' => '由 :bagisto 提供支持，一个由 :webkul 社区支持的项目。',
+            'powered-by-description' => '由 :aessaputra 创建',
             'submit-btn'             => '重置密码',
             'title'                  => '重置密码',
         ],
