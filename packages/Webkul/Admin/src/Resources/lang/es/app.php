@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 return [
     'users' => [
@@ -6,7 +6,7 @@ return [
             'email'                  => 'Dirección de Correo Electrónico',
             'forget-password-link'   => '¿Olvidaste tu Contraseña?',
             'password'               => 'Contraseña',
-            'powered-by-description' => 'Dibuat Oleh :aessaputra',
+            'powered-by-description' => 'Creado por :aessaputra',
             'submit-btn'             => 'Iniciar Sesión',
             'title'                  => 'Iniciar Sesión',
         ],
@@ -16,7 +16,7 @@ return [
                 'email'                  => 'Correo Electrónico Registrado',
                 'email-not-exist'        => 'El Correo Electrónico no Existe',
                 'page-title'             => 'Olvidar Contraseña',
-                'powered-by-description' => 'Dibuat Oleh :aessaputra',
+                'powered-by-description' => 'Creado por :aessaputra',
                 'reset-link-sent'        => 'Enlace para Restablecer la Contraseña Enviado',
                 'sign-in-link'           => '¿Volver a Iniciar Sesión?',
                 'submit-btn'             => 'Restablecer',
@@ -29,7 +29,7 @@ return [
             'confirm-password'       => 'Confirmar Contraseña',
             'email'                  => 'Correo Electrónico Registrado',
             'password'               => 'Contraseña',
-            'powered-by-description' => 'Dibuat Oleh :aessaputra',
+            'powered-by-description' => 'Creado por :aessaputra',
             'submit-btn'             => 'Restablecer Contraseña',
             'title'                  => 'Restablecer Contraseña',
         ],
