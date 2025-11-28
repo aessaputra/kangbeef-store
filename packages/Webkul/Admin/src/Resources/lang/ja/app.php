@@ -4709,7 +4709,7 @@ return [
             ],
 
             'powered-by' => [
-                'description' => ':webkul によるオープンソースプロジェクト :bagisto によって提供されています。',
+                'description' => ':aessaputra によって作成',
             ],
         ],
 

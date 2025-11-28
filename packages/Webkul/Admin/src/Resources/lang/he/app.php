@@ -4709,7 +4709,7 @@ return [
             ],
 
             'powered-by' => [
-                'description' => 'מופעל על ידי :bagisto, פרויקט קוד פתוח על ידי :webkul.',
+                'description' => 'נוצר על ידי :aessaputra',
             ],
         ],
 

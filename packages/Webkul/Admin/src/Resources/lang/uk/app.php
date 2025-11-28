@@ -4709,7 +4709,7 @@ return [
             ],
 
             'powered-by' => [
-                'description' => 'Працює на платформі :bagisto, спільний проект :webkul.',
+                'description' => 'Створено :aessaputra',
             ],
         ],
 

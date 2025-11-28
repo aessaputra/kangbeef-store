@@ -4709,7 +4709,7 @@ return [
             ],
 
             'powered-by' => [
-                'description' => 'Propulsé par :bagisto, un projet open-source par :webkul.',
+                'description' => 'Créé par :aessaputra',
             ],
         ],
 

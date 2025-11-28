@@ -4709,7 +4709,7 @@ return [
             ],
 
             'powered-by' => [
-                'description' => 'قدرت گرفته از :bagisto، یک پروژه متن‌باز توسط :webkul.',
+                'description' => 'ایجاد شده توسط :aessaputra',
             ],
         ],
 

@@ -4709,7 +4709,7 @@ return [
             ],
 
             'powered-by' => [
-                'description' => ':bagisto द्वारा संचालित, :webkul द्वारा एक ओपन-सोर्स परियोजना।',
+                'description' => ':aessaputra द्वारा निर्मित',
             ],
         ],
 

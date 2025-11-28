@@ -4709,7 +4709,7 @@ return [
             ],
 
             'powered-by' => [
-                'description' => 'Dibuat oleh :bagisto, proyek open-source dari :webkul.',
+                'description' => 'Dibuat Oleh :aessaputra',
             ],
         ],
 
