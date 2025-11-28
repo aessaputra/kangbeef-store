@@ -175,4 +175,3 @@ If you discover a security vulnerability within Kangbeef Store, please send an e
 
 - Powered by [Laravel](https://laravel.com/) and [Vue.js](https://vuejs.org/)
 - Special thanks to our meat suppliers and quality assurance partners
-test 
